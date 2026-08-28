@@ -29,7 +29,19 @@ work in this repo, not just this one feature.
 
 ## Implementation log
 
-Branch: `perrypedia-metadata-source` on `origin` (hakan42/grimmory).
+Branch: `perrypedia-metadata-source-wip` on `origin` (hakan42/grimmory) —
+see "Branch & commit strategy" above for why it's `-wip` and what happens
+at the end.
+
+The implementation below (steps 1–6) landed in one commit,
+`847101dcc` — "feat(metadata): add Perrypedia metadata provider" — staged
+via an explicit path list rather than `git add -A`, to keep two things
+out: the uncommitted local-only [[goodreads-token-local-only]] GoodReads
+token workaround (a modified *tracked* file, so `-A` would have swept it
+in), and `AGENTS.md`/`CLAUDE.md`/`TASK-init.md` (untracked, but still
+wrong to include). Worth the same care on any future commit to this
+branch while that GoodReads workaround is still sitting in the working
+tree uncommitted.
 
 - [x] **Step 1 — data model (`perrypediaId` plumbing, id-only, no rating)**:
   `model/dto/BookMetadata.java` (+`perrypediaId`, +`perrypediaIdLocked`),
