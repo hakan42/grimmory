@@ -6,6 +6,27 @@ Heftromane (the long-running German pulp-SF serial) from Perrypedia
 [[AGENTS.md]] for the general provider-registration checklist this spec
 elaborates on with source-specific detail.
 
+## Branch & commit strategy
+
+Two branches, two different jobs:
+
+- **`perrypedia-metadata-source-wip`** (this branch) — the working branch.
+  Iterative commits land here as work progresses, including this TASK file
+  and [[TASK-track-upstream-releases.md]] as their own separate commits
+  (not `AGENTS.md`/`CLAUDE.md` — those are never committed at all, per
+  [[TASK-init.md|the original init task]]).
+- **`perrypedia-metadata-source`** — the clean PR branch, created only once
+  the `-wip` branch is working end-to-end. Cut fresh from whatever
+  `upstream/develop` is at that moment (not from `-wip`), and populated
+  with **one single commit** containing the actual implementation
+  (backend + frontend + migration + tests) — no `.md` files at all, so the
+  diff GitHub shows on the PR is exactly the code change, nothing else.
+
+This keeps the messy/iterative history and the planning docs on `-wip`
+only, while `perrypedia-metadata-source` stays a clean, single-commit,
+docs-free PR candidate. Saved to memory as a general pattern for future
+work in this repo, not just this one feature.
+
 ## Implementation log
 
 Branch: `perrypedia-metadata-source` on `origin` (hakan42/grimmory).
