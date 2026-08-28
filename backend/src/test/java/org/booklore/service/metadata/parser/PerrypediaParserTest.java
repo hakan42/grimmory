@@ -44,17 +44,24 @@ class PerrypediaParserTest {
         }
     }
 
-    /** Builds a formatversion=2 MediaWiki query response wrapping the given wikitext, resolved via redirect. */
-    private String buildQueryResponse(String redirectFrom, String resolvedTitle, String wikitext) {
+    /** A minimal rendered-infobox HTML fragment with just the "Zyklus" row this parser reads. */
+    private String zyklusHtml(String cycleName) {
+        return "<div class=\"mw-parser-output\"><table>"
+                + "<tr><td>Serie:</td><td>Perry Rhodan</td></tr>"
+                + "<tr><td>Zyklus:</td><td><a href=\"/wiki/X\">" + cycleName + "</a></td></tr>"
+                + "</table></div>";
+    }
+
+    /** Builds a formatversion=2 action=parse response wrapping the given wikitext and rendered HTML. */
+    private String buildParseResponse(String redirectFrom, String resolvedTitle, String wikitext, String html) {
         ObjectNode root = objectMapper.createObjectNode();
-        ObjectNode query = root.putObject("query");
+        ObjectNode parse = root.putObject("parse");
+        parse.put("title", resolvedTitle);
         if (redirectFrom != null) {
-            query.putArray("redirects").addObject().put("from", redirectFrom).put("to", resolvedTitle);
+            parse.putArray("redirects").addObject().put("from", redirectFrom).put("to", resolvedTitle);
         }
-        var page = query.putArray("pages").addObject();
-        page.put("title", resolvedTitle);
-        var content = page.putArray("revisions").addObject().putObject("slots").putObject("main");
-        content.put("content", wikitext);
+        parse.put("wikitext", wikitext);
+        parse.put("text", html);
         return root.toString();
     }
 
@@ -111,7 +118,7 @@ class PerrypediaParserTest {
     void fetchTopMetadata_ClassicSeries_ResolvesViaSourceId() throws Exception {
         setUp();
         mockResponse("Quelle:PR3000", 200,
-                buildQueryResponse("Quelle:PR3000", "Mythos Erde (Roman)", readFixture("mythos_erde")));
+                buildParseResponse("Quelle:PR3000", "Mythos Erde (Roman)", readFixture("mythos_erde"), zyklusHtml("Mythos")));
 
         Book book = Book.builder().build();
         FetchMetadataRequest request = FetchMetadataRequest.builder().title("PR 3000 - Mythos Erde").build();
@@ -123,7 +130,7 @@ class PerrypediaParserTest {
         assertThat(metadata.getTitle()).isEqualTo("Mythos Erde");
         assertThat(metadata.getSubtitle()).isEqualTo("Die Zeit verändert alles");
         assertThat(metadata.getAuthors()).containsExactly("Christian Montillon", "Wim Vandemaan");
-        assertThat(metadata.getSeriesName()).isEqualTo("Perry Rhodan");
+        assertThat(metadata.getSeriesName()).isEqualTo("Mythos");
         assertThat(metadata.getSeriesNumber()).isEqualTo(3000.0f);
         assertThat(metadata.getPublishedDate()).isEqualTo(LocalDate.of(2019, 2, 15));
 
@@ -136,7 +143,7 @@ class PerrypediaParserTest {
     void fetchTopMetadata_NeoSeries_ResolvesViaSourceId() throws Exception {
         setUp();
         mockResponse("Quelle:PRN389", 200,
-                buildQueryResponse("Quelle:PRN389", "Wenn Sterne bluten", readFixture("wenn_sterne_bluten")));
+                buildParseResponse("Quelle:PRN389", "Wenn Sterne bluten", readFixture("wenn_sterne_bluten"), zyklusHtml("Artefakte")));
 
         Book book = Book.builder().build();
         FetchMetadataRequest request = FetchMetadataRequest.builder().title("PRN389 - Wenn Sterne bluten").build();
@@ -146,7 +153,7 @@ class PerrypediaParserTest {
         assertThat(metadata).isNotNull();
         assertThat(metadata.getPerrypediaId()).isEqualTo("PRN389");
         assertThat(metadata.getTitle()).isEqualTo("Wenn Sterne bluten");
-        assertThat(metadata.getSeriesName()).isEqualTo("Perry Rhodan Neo");
+        assertThat(metadata.getSeriesName()).isEqualTo("Artefakte");
         assertThat(metadata.getPublishedDate()).isEqualTo(LocalDate.of(2026, 8, 14));
     }
 
@@ -154,7 +161,7 @@ class PerrypediaParserTest {
     void fetchTopMetadata_AtlanSeries_ResolvesViaSourceId() throws Exception {
         setUp();
         mockResponse("Quelle:A800", 200,
-                buildQueryResponse("Quelle:A800", "Die Zeitfestung", readFixture("die_zeitfestung")));
+                buildParseResponse("Quelle:A800", "Die Zeitfestung", readFixture("die_zeitfestung"), zyklusHtml("Im Auftrag der Kosmokraten")));
 
         Book book = Book.builder().build();
         FetchMetadataRequest request = FetchMetadataRequest.builder().title("A800 - Die Zeitfestung").build();
@@ -165,7 +172,7 @@ class PerrypediaParserTest {
         assertThat(metadata.getPerrypediaId()).isEqualTo("A800");
         assertThat(metadata.getTitle()).isEqualTo("Die Zeitfestung");
         assertThat(metadata.getSubtitle()).isEqualTo("Überraschung im Intern-Kosmos");
-        assertThat(metadata.getSeriesName()).isEqualTo("Atlan");
+        assertThat(metadata.getSeriesName()).isEqualTo("Im Auftrag der Kosmokraten");
         assertThat(metadata.getPublishedDate()).isEqualTo(LocalDate.of(1987, 1, 27));
     }
 
@@ -173,8 +180,8 @@ class PerrypediaParserTest {
     void fetchTopMetadata_NoSourceId_FallsBackToTitleSearch() throws Exception {
         setUp();
         mockResponse("list=search", 200, buildSearchResponse("Wenn Sterne bluten"));
-        mockResponse("titles=Wenn", 200,
-                buildQueryResponse(null, "Wenn Sterne bluten", readFixture("wenn_sterne_bluten")));
+        mockResponse("page=Wenn", 200,
+                buildParseResponse(null, "Wenn Sterne bluten", readFixture("wenn_sterne_bluten"), zyklusHtml("Artefakte")));
 
         Book book = Book.builder().build();
         FetchMetadataRequest request = FetchMetadataRequest.builder().title("Wenn Sterne bluten").build();
@@ -185,6 +192,42 @@ class PerrypediaParserTest {
         // No source id could be matched from the search-resolved title itself, but the series
         // (and thus the perrypediaId prefix) is still recovered from the infobox template name.
         assertThat(metadata.getPerrypediaId()).isEqualTo("PRN389");
-        assertThat(metadata.getSeriesName()).isEqualTo("Perry Rhodan Neo");
+        assertThat(metadata.getSeriesName()).isEqualTo("Artefakte");
+    }
+
+    @Test
+    void extractZyklus_MissingRow_ReturnsNullSeriesName() throws Exception {
+        setUp();
+        String htmlWithoutZyklus = "<div class=\"mw-parser-output\"><table><tr><td>Serie:</td><td>Perry Rhodan</td></tr></table></div>";
+        mockResponse("Quelle:PR3000", 200,
+                buildParseResponse("Quelle:PR3000", "Mythos Erde (Roman)", readFixture("mythos_erde"), htmlWithoutZyklus));
+
+        Book book = Book.builder().build();
+        FetchMetadataRequest request = FetchMetadataRequest.builder().title("PR 3000 - Mythos Erde").build();
+
+        BookMetadata metadata = parser.fetchTopMetadata(book, request);
+
+        assertThat(metadata).isNotNull();
+        assertThat(metadata.getSeriesName()).isNull();
+        // The rest of the metadata should still be present even without a Zyklus row.
+        assertThat(metadata.getTitle()).isEqualTo("Mythos Erde");
+    }
+
+    /**
+     * Regression test: "Wenn Schatten bluten" is not a real Perrypedia article — confirmed live
+     * via the search API, {@code totalhits: 0} — so a book whose filename/title falls back to
+     * this search text (e.g. a mistyped or garbled title) must not silently produce a wrong
+     * result. This is the exact zero-hit response Perrypedia's search API returns for it.
+     */
+    @Test
+    void fetchTopMetadata_SearchYieldsNoResults_ReturnsNull() throws Exception {
+        setUp();
+        mockResponse("list=search", 200, "{\"batchcomplete\":true,\"query\":{\"searchinfo\":{\"totalhits\":0},\"search\":[]}}");
+
+        Book book = Book.builder().build();
+        FetchMetadataRequest request = FetchMetadataRequest.builder().title("Wenn Schatten bluten").build();
+
+        assertThat(parser.fetchTopMetadata(book, request)).isNull();
+        assertThat(parser.fetchMetadata(book, request)).isEmpty();
     }
 }
