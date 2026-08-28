@@ -206,6 +206,40 @@ tree uncommitted.
   Node install was needed; `node_modules`/`dist`/`.pnpm-store` stayed
   correctly gitignored (confirmed via `git status`).
 
+## Local test image
+
+Built and pushed a local end-to-end test image from this `-wip` branch's
+working tree (uncommitted `GoodReadsParser.java` workaround included,
+since Docker builds from the working tree, not git history):
+
+```
+docker buildx build --platform linux/amd64 -t grimmory:local --load .
+docker tag grimmory:local ghcr.io/hakan42/grimmory:perrypedia-metadata
+gh auth token | docker login ghcr.io -u hakan42 --password-stdin
+docker push ghcr.io/hakan42/grimmory:perrypedia-metadata
+```
+
+Live at `ghcr.io/hakan42/grimmory:perrypedia-metadata`
+(`sha256:2f256f1720e4...`). Authenticated to GHCR via `gh auth token`
+rather than reading any credential file directly — `gh` was already
+logged in as `hakan42` with `write:packages` scope. GHCR cross-mounted
+several shared base-image layers from `grimmory-tools/grimmory` and
+`marvinvr/docktail` already present in the registry, so only the actual
+app layers needed uploading.
+
+This is the general pattern for future local test images from this
+repo/fork — `ghcr.io/hakan42/grimmory:<descriptive-tag>` — not just this
+one build. Saved to memory as [[ghcr-local-test-image-tagging]].
+
+**Environment gotcha hit along the way**: an earlier ad-hoc
+`docker run` against `gradle:9.5.1-jdk25-alpine` (bind-mounting the repo
+root to cross-check the backend build in Docker) ran as root and left
+`backend/build/` root-owned, which then broke the next host-side
+`./gradlew test` with `AccessDeniedException` on class files. Fixed with
+a one-off `alpine chown -R $(id -u):$(id -g) /workspace` container
+against the repo root. Worth remembering if mixing host and root-in-
+container builds against the same working directory again.
+
 ## Outstanding before this is PR-ready
 
 - No frontend tests were added (e.g. for `metadata-searcher.component.ts`'s
