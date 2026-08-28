@@ -53,6 +53,7 @@ describe('metadata-field.config', () => {
       hardcoverRating: false,
       hardcoverReviewCount: false,
       comicvineId: false,
+      perrypediaId: false,
       lubimyczytacId: false,
       lubimyczytacRating: false,
       ranobedbId: false,
