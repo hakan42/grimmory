@@ -27,6 +27,14 @@ only, while `perrypedia-metadata-source` stays a clean, single-commit,
 docs-free PR candidate. Saved to memory as a general pattern for future
 work in this repo, not just this one feature.
 
+**Done**: cut in a separate `git worktree` (never the main checkout
+directly, to keep the uncommitted local-only
+[[goodreads-token-local-only]] GoodReads fix out of harm's way) —
+`upstream/develop` hadn't moved since `-wip` was based on it, so no
+rebase was needed. Single commit `3ba898cc0`, 68 files, zero `.md`
+files, pushed to `origin/perrypedia-metadata-source`. Technique saved to
+memory as [[wip-then-clean-pr-branch]].
+
 ## Implementation log
 
 Branch: `perrypedia-metadata-source-wip` on `origin` (hakan42/grimmory) —
@@ -255,7 +263,16 @@ digest automatically.
 **Rebuilt and re-pushed again** after the `BookMetadataUpdater`
 persistence-bug fix — new digest `sha256:6907be1f5412...`, was
 `sha256:9f4213538a4c...`. Confirmed live via `docker inspect
-grimmory-dev-server-1` again — same auto-update behavior.
+grimmory-dev-server-1` again — same auto-update behavior. Confirmed
+persisted end-to-end: visually in the UI, and directly in
+`grimmory-dev-db-1` (`perrypedia_id`/`series_name` columns holding real
+values after an edit and a re-fetch).
+
+Also tagged and pushed `ghcr.io/hakan42/grimmory:v3.3.3-perrypedia-metadata`
+as an additional tag on the same digest (`v3.3.3` = the version the
+currently-deployed prod container runs) — not a replacement for
+`perrypedia-metadata`, which `grimmory-dev`'s compose file is hardcoded
+to track.
 
 ## Real-instance testing findings (dev deployment)
 
