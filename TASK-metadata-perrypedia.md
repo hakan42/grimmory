@@ -274,6 +274,18 @@ currently-deployed prod container runs) — not a replacement for
 `perrypedia-metadata`, which `grimmory-dev`'s compose file is hardcoded
 to track.
 
+Also pushed both tags (`perrypedia-metadata` and
+`v3.3.3-perrypedia-metadata`) to the local `zot` registry at
+`registry.raven-alioth.ts.net/digital-library/grimmory` — a
+`zot-server-1` container exposed via `docktail` under service name
+`registry` (its own `docktail.service.name` label says `zot`, but the
+indexed label that actually got registered says `registry` — confirmed
+from `docktail-docktail-1`'s logs). No login needed, anonymous push
+works. Same digest as GHCR (`sha256:6907be1f5412...`) — all layers
+already existed, near-instant push both times. Technique saved to
+memory as [[ghcr-local-test-image-tagging]] (name predates the zot
+addition, still covers both now).
+
 ## Real-instance testing findings (dev deployment)
 
 Testing against the live `grimmory-dev` instance (see
