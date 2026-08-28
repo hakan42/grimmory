@@ -391,6 +391,41 @@ Testing against the live `grimmory-dev` instance (see
    this codebase**: audit with a case-insensitive grep from the start —
    a case-sensitive one will miss every JavaBean getter/setter.
 
+4. **On an existing/pre-existing installation** (a real prod instance,
+   promoted to run `v3.3.3-perrypedia-metadata` directly — confirmed via
+   `docker inspect grimmory-server-1`), Perrypedia worked fine as a
+   metadata *source* (search/fetch), but the "Perrypedia ID" field never
+   showed on the book detail/edit page. **Not a migration problem** —
+   checked `grimmory-db-1` (prod's own DB, separate from
+   `grimmory-dev-db-1`) directly: `V147` applied successfully, columns
+   present and correctly typed, same as dev.
+   **Root cause**: `MetadataProviderSpecificFields`
+   (`model/dto/settings/MetadataProviderSpecificFields.java`) — the
+   per-field visibility-toggle settings, a separate concern from the
+   provider-*enabled* settings that Perrypedia's search/fetch actually
+   depends on — is a plain bean of boxed `Boolean` fields with no
+   Jackson null-handling. The persisted `metadata_provider_specific_fields`
+   row in `app_settings` predates `perrypediaId`'s existence, so the key
+   is simply absent from that JSON; Jackson deserialization leaves the
+   field `null` rather than backfilling the class's intended default
+   (`true`, from `getDefaultMetadataProviderSpecificFields()`) — and
+   `null` reads as "hidden" wherever the frontend checks field
+   visibility. **Confirmed this isn't new or Perrypedia-specific**: the
+   same persisted JSON already has `"ranobedbId": null` for the
+   identical reason from that field's own rollout — a systemic gap in
+   this settings class, not something this PR introduced.
+   **Not fixed in code** — the user chose to resolve it by simply
+   opening the field-visibility settings screen (renders
+   `metadata-provider-field-selector.component`) and saving once, which
+   submits the full object (including `perrypediaId: true`) and fixes it
+   for that instance. The real fix — giving every field in this class a
+   default-`true` initializer plus `@JsonSetter(nulls = Nulls.SKIP)`,
+   mirroring the exact pattern `MetadataRefreshOptions.EnabledFields`
+   already uses elsewhere in this codebase for exactly this problem — is
+   **out of scope for this PR** (touches all 19 fields, not just the new
+   one) but worth flagging to a maintainer as a pre-existing gap, since
+   it'll bite the next field added here too.
+
 Also investigated (from a screenshot showing a book's title as "Wenn
 Schatten bluten" for what should be PRN 389 "Wenn Sterne bluten"):
 confirmed live via Perrypedia's own search API that **no article titled
