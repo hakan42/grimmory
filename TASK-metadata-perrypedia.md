@@ -302,6 +302,59 @@ Testing against the live `grimmory-dev` instance (see
    against the live dev instance — only this one settings dialog had the
    gap.
 
+3. **The Perrypedia ID didn't persist on save at all** — editing it
+   manually, or via the "copy" icon on a search result, then saving and
+   reopening the book showed nothing. Verified the schema and migration
+   were fine first (`docker exec`'d into `grimmory-dev-db-1`:
+   `DESCRIBE book_metadata` shows `perrypedia_id`/`perrypedia_id_locked`
+   present and correctly typed; `flyway_schema_history` shows `V147`
+   applied with `success=1`) — so this wasn't a missing-column problem.
+   **Root cause**: `BookMetadataUpdater.applyFieldUpdates`/`updateLocks`
+   apply an edited `BookMetadata` DTO onto the entity via an explicit
+   per-field `handleFieldUpdate(...)`/`Pair.of(...)` call list —
+   `perrypediaId` was never added to it, so every save silently dropped
+   it while every other field round-tripped normally. This is the exact
+   save path both manual edits and the "copy from search results" icon
+   go through.
+   **How this was missed originally**: the repo-wide audit technique
+   used throughout this spec (`grep -c comicvineId` vs `grep -c
+   perrypediaId` per file) was case-sensitive, so it matched
+   lowercase-first field-name usages but silently missed every JavaBean
+   accessor — `setComicvineId`/`getComicvineId` (capital `C`) — which is
+   exactly where `BookMetadataUpdater` lived. Re-running the same audit
+   **case-insensitively** (`grep -ci`) surfaced **11 more real gaps**
+   beyond `BookMetadataUpdater` itself:
+   - `MetadataRefreshService` — the actual metadata-*refresh* apply
+     logic (provider selection for a field, enabled-field application,
+     lock carry-over on non-refreshed fields). Same class of bug as
+     `BookMetadataUpdater`, different code path — a fetched Perrypedia
+     result was never being applied here either, independent of the
+     save-path bug.
+   - `BookQueryService` — the metadata strip/redaction logic (both
+     values and locks) and the "are all fields locked" check.
+   - `BookFileDetachmentService` — metadata copy when detaching a file
+     from a multi-file book.
+   - `DuplicateDetectionService` — the external-ID set used for
+     duplicate-book matching.
+   - `BookdropMetadataService` — the "has any known identifier" check,
+     which even carries a `// Keep in sync with identifier fields...`
+     comment.
+   - `Azw3Processor`/`CbxProcessor`/`EpubProcessor`/`Fb2Processor`/
+     `MobiProcessor`/`PdfProcessor` — initial-import metadata copy from
+     extracted file metadata onto a new book entity. Confirmed the
+     AZW3/FB2/MOBI-specific extractors don't currently populate
+     `comicvineId` either (0 hits, case-insensitive), so this is
+     presently a structural no-op for those three formats — fixed for
+     consistency with the existing `comicvineId` pass-through and to be
+     correct if that ever changes.
+   Re-audited case-insensitively afterward: only the three
+   already-confirmed intentional exceptions remain
+   (`ComicvineBookParser`'s own implementation, and the comic-specific
+   web-URL logic in `CbxMetadataExtractor`/`CbxMetadataWriter` that has
+   no Perrypedia equivalent). **Lesson for any future field addition in
+   this codebase**: audit with a case-insensitive grep from the start —
+   a case-sensitive one will miss every JavaBean getter/setter.
+
 Also investigated (from a screenshot showing a book's title as "Wenn
 Schatten bluten" for what should be PRN 389 "Wenn Sterne bluten"):
 confirmed live via Perrypedia's own search API that **no article titled
