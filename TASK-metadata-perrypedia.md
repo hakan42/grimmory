@@ -243,12 +243,19 @@ container builds against the same working directory again.
 **Rebuilt and re-pushed** after the Zyklus/`action=parse` fix (same tag,
 new digest `sha256:9f4213538a...`, was `sha256:2f256f1720e4...`). The
 `grimmory-dev-server-1` container (part of the `grimmory-dev`
-docker-compose project) tracks this exact tag but doesn't auto-pull on
-push — needs `docker compose pull && docker compose up -d` in
-`~/src/digital-library/grimmory` to actually pick up the new digest,
-unless something else (wud?) is watching it; no `wud.watch` label is set
-on that container either way, so its default-watch behavior is unknown
-from here.
+docker-compose project) tracks this exact tag. **Correction to the
+original note here**: it does auto-update — confirmed twice now
+(`docker inspect grimmory-dev-server-1 --format '{{.Image}}'` matched
+the freshly-pushed digest within ~5 minutes both times, no manual
+`docker compose pull`/`up -d` needed). Something (likely `wud`, though
+no `wud.watch` label is set on that container either way) is polling
+`ghcr.io/hakan42/grimmory:perrypedia-metadata` and redeploying on a new
+digest automatically.
+
+**Rebuilt and re-pushed again** after the `BookMetadataUpdater`
+persistence-bug fix — new digest `sha256:6907be1f5412...`, was
+`sha256:9f4213538a4c...`. Confirmed live via `docker inspect
+grimmory-dev-server-1` again — same auto-update behavior.
 
 ## Real-instance testing findings (dev deployment)
 
