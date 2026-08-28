@@ -5,11 +5,15 @@ import lombok.extern.slf4j.Slf4j;
 import org.booklore.model.dto.Book;
 import org.booklore.model.dto.BookMetadata;
 import org.booklore.model.dto.request.FetchMetadataRequest;
-import org.booklore.model.dto.response.perrypediaapi.PerrypediaQueryResponse;
+import org.booklore.model.dto.response.perrypediaapi.PerrypediaParseResponse;
 import org.booklore.model.dto.response.perrypediaapi.PerrypediaSearchResponse;
 import org.booklore.model.enums.MetadataProvider;
 import org.booklore.service.metadata.parser.perrypedia.InfoboxWikitextParser;
 import org.booklore.util.BookUtils;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
 import org.springframework.stereotype.Service;
 import org.springframework.web.util.UriComponentsBuilder;
 import tools.jackson.databind.ObjectMapper;
@@ -21,6 +25,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.DateTimeException;
 import java.time.LocalDate;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
@@ -33,9 +38,13 @@ import java.util.regex.Pattern;
  * Fetches metadata for Perry Rhodan / Perry Rhodan Neo / Atlan Heftromane from
  * Perrypedia (https://www.perrypedia.de), a MediaWiki-based fan encyclopedia.
  * <p>
- * There is no structured query API (no Semantic MediaWiki), so this reads a
- * page's raw wikitext and pulls the infobox out of it via
- * {@link InfoboxWikitextParser}.
+ * There is no structured query API (no Semantic MediaWiki), so this uses
+ * {@code action=parse} to get both the raw wikitext (for fields the infobox
+ * template exposes as literal parameters — title, subtitle, author, issue
+ * number, publication date) and the rendered infobox HTML in a single
+ * request. The story cycle ("Zyklus") is only available as expanded
+ * template output, not a literal parameter, so it's read from the rendered
+ * HTML infobox instead of the wikitext.
  */
 @Slf4j
 @Service
@@ -122,24 +131,11 @@ public class PerrypediaParser implements BookParser {
     private BookMetadata fetchBySourceId(SourceId sourceId) {
         try {
             waitForRateLimit();
-
-            URI uri = UriComponentsBuilder.fromUriString(PERRYPEDIA_API_URL)
-                    .queryParam("action", "query")
-                    .queryParam("prop", "revisions")
-                    .queryParam("rvslots", "main")
-                    .queryParam("rvprop", "content")
-                    .queryParam("redirects", "1")
-                    .queryParam("format", "json")
-                    .queryParam("formatversion", "2")
-                    .queryParam("titles", "Quelle:" + sourceId.key())
-                    .build()
-                    .toUri();
-
-            PerrypediaQueryResponse.Page page = fetchPage(uri);
-            if (page == null) {
+            PerrypediaParseResponse.Parse parse = fetchParse(buildParseUri("Quelle:" + sourceId.key()));
+            if (parse == null) {
                 return null;
             }
-            return wikitextToMetadata(page.getRevisions().getFirst().getSlots().getMain().getContent(), sourceId, page.getTitle());
+            return toMetadata(parse.getWikitext(), parse.getText(), sourceId, parse.getTitle());
         } catch (IOException | InterruptedException e) {
             log.error("Error fetching metadata from Perrypedia API for source id '{}'", sourceId.key(), e);
             return null;
@@ -180,32 +176,34 @@ public class PerrypediaParser implements BookParser {
             String matchedTitle = searchResponse.getQuery().getSearch().getFirst().getTitle();
 
             waitForRateLimit();
-            URI articleUri = UriComponentsBuilder.fromUriString(PERRYPEDIA_API_URL)
-                    .queryParam("action", "query")
-                    .queryParam("prop", "revisions")
-                    .queryParam("rvslots", "main")
-                    .queryParam("rvprop", "content")
-                    .queryParam("format", "json")
-                    .queryParam("formatversion", "2")
-                    .queryParam("titles", matchedTitle)
-                    .build()
-                    .toUri();
-
-            PerrypediaQueryResponse.Page page = fetchPage(articleUri);
-            if (page == null) {
+            PerrypediaParseResponse.Parse parse = fetchParse(buildParseUri(matchedTitle));
+            if (parse == null) {
                 return null;
             }
             // Best-effort: a search-matched title rarely embeds the source id, so this is
-            // usually null and wikitextToMetadata falls back to series-prefix + Nummer.
-            SourceId sourceId = extractSourceId(page.getTitle());
-            return wikitextToMetadata(page.getRevisions().getFirst().getSlots().getMain().getContent(), sourceId, page.getTitle());
+            // usually null and toMetadata falls back to series-prefix + Nummer.
+            SourceId sourceId = extractSourceId(parse.getTitle());
+            return toMetadata(parse.getWikitext(), parse.getText(), sourceId, parse.getTitle());
         } catch (IOException | InterruptedException e) {
             log.error("Error searching Perrypedia for '{}'", title, e);
             return null;
         }
     }
 
-    private PerrypediaQueryResponse.Page fetchPage(URI uri) throws IOException, InterruptedException {
+    private URI buildParseUri(String pageTitle) {
+        return UriComponentsBuilder.fromUriString(PERRYPEDIA_API_URL)
+                .queryParam("action", "parse")
+                .queryParam("page", pageTitle)
+                .queryParam("redirects", "1")
+                .queryParam("prop", "wikitext|text")
+                .queryParam("section", "0")
+                .queryParam("format", "json")
+                .queryParam("formatversion", "2")
+                .build()
+                .toUri();
+    }
+
+    private PerrypediaParseResponse.Parse fetchParse(URI uri) throws IOException, InterruptedException {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(uri)
                 .header("User-Agent", USER_AGENT)
@@ -213,23 +211,22 @@ public class PerrypediaParser implements BookParser {
                 .build();
 
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+        // TEMPORARY: dump the raw response for debugging against the live API; remove once the
+        // Zyklus/action=parse switch is confirmed working end-to-end.
+        log.info("Perrypedia raw response for {}: {}", uri, response.body());
         if (response.statusCode() != 200) {
             log.error("Perrypedia API returned status code {}", response.statusCode());
             return null;
         }
 
-        PerrypediaQueryResponse parsed = objectMapper.readValue(response.body(), PerrypediaQueryResponse.class);
-        if (parsed.getQuery() == null || parsed.getQuery().getPages() == null || parsed.getQuery().getPages().isEmpty()) {
+        PerrypediaParseResponse parsed = objectMapper.readValue(response.body(), PerrypediaParseResponse.class);
+        if (parsed.getParse() == null || parsed.getParse().getWikitext() == null) {
             return null;
         }
-        PerrypediaQueryResponse.Page page = parsed.getQuery().getPages().getFirst();
-        if (page.isMissing() || page.getRevisions() == null || page.getRevisions().isEmpty()) {
-            return null;
-        }
-        return page;
+        return parsed.getParse();
     }
 
-    private BookMetadata wikitextToMetadata(String wikitext, SourceId fallbackSourceId, String resolvedTitle) {
+    private BookMetadata toMetadata(String wikitext, String html, SourceId fallbackSourceId, String resolvedTitle) {
         Optional<InfoboxWikitextParser.InfoboxBlock> blockOpt = InfoboxWikitextParser.parse(wikitext);
         if (blockOpt.isEmpty()) {
             return null;
@@ -254,7 +251,7 @@ public class PerrypediaParser implements BookParser {
                 .title(title)
                 .subtitle(fields.get("Untertitel"))
                 .authors(parseAuthors(fields.get("Autor")))
-                .seriesName(seriesLabel(seriesPrefix))
+                .seriesName(extractZyklus(html))
                 .seriesNumber(parseFloat(number))
                 .publishedDate(parseGermanDate(fields.get("Erscheinungsdatum")))
                 .language("de")
@@ -265,6 +262,10 @@ public class PerrypediaParser implements BookParser {
      * The infobox template name encodes which series an article belongs to:
      * "Roman Zyklus N" (classic), "Handlungszusammenfassung Neo Staffel N"
      * (Neo), or "Handlungszusammenfassung Atlan &lt;cycle name&gt;" (Atlan).
+     * Used only to derive the {@code perrypediaId} prefix — the story cycle
+     * itself ("Zyklus") comes from {@link #extractZyklus}, since the cycle
+     * name isn't a literal template parameter for the classic/Neo series
+     * (only Atlan happens to embed it directly in the template name).
      */
     private String detectSeriesPrefix(String templateName) {
         if (templateName == null) {
@@ -283,23 +284,37 @@ public class PerrypediaParser implements BookParser {
         return null;
     }
 
-    private String seriesLabel(String seriesPrefix) {
-        if (seriesPrefix == null) {
+    /**
+     * Reads the "Zyklus" (story cycle) row out of the rendered infobox table.
+     * This can't come from the wikitext parameters — the cycle name is
+     * template-expanded from the cycle number ("Roman Zyklus 42" -&gt;
+     * "Mythos"), not passed as a literal argument — so this needs the
+     * rendered HTML rather than {@link InfoboxWikitextParser}.
+     */
+    private String extractZyklus(String html) {
+        if (html == null || html.isBlank()) {
             return null;
         }
-        return switch (seriesPrefix) {
-            case "PR" -> "Perry Rhodan";
-            case "PRN" -> "Perry Rhodan Neo";
-            case "A" -> "Atlan";
-            default -> null;
-        };
+        Document doc = Jsoup.parse(html);
+        for (Element row : doc.select("tr")) {
+            Elements cells = row.select("td, th");
+            if (cells.size() < 2) {
+                continue;
+            }
+            String label = cells.getFirst().text().trim();
+            if (label.equalsIgnoreCase("Zyklus:") || label.equalsIgnoreCase("Zyklus")) {
+                String value = cells.get(1).text().trim();
+                return value.isEmpty() ? null : value;
+            }
+        }
+        return null;
     }
 
     private List<String> parseAuthors(String raw) {
         if (raw == null || raw.isBlank()) {
             return null;
         }
-        return java.util.Arrays.stream(raw.split(","))
+        return Arrays.stream(raw.split(","))
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())
                 .toList();

@@ -240,6 +240,70 @@ a one-off `alpine chown -R $(id -u):$(id -g) /workspace` container
 against the repo root. Worth remembering if mixing host and root-in-
 container builds against the same working directory again.
 
+## Real-instance testing findings (dev deployment)
+
+Testing against the live `grimmory-dev` instance (see
+[[ghcr-local-test-image-tagging]]) surfaced two real issues, both fixed:
+
+1. **`seriesName` was wrong.** It was set from the series *family*
+   ("Perry Rhodan" / "Perry Rhodan Neo" / "Atlan", derived from the
+   `perrypediaId` prefix) instead of the story *cycle* ("Zyklus" — e.g.
+   "Mythos" for PR 3000, "Artefakte" for PRN 389, "Im Auftrag der
+   Kosmokraten" for A 800), which is what a reader actually wants tracked
+   as a series (~100 issues per cycle vs. 3000+ for the whole franchise).
+   **Root cause**: "Zyklus" is not a literal wikitext template parameter —
+   confirmed live, `Mythos Erde (Roman)`'s raw wikitext has no `|Zyklus =`
+   key at all. The classic-series template (`{{Roman Zyklus 42 ...}}`)
+   only carries the cycle *number*; the cycle *name* ("Mythos") is
+   template-expanded from that number by the wiki itself, so it only
+   exists in rendered output, not the raw source.
+   **Fix**: switched the API call from `action=query&prop=revisions` to
+   `action=parse&prop=wikitext|text&redirects=1&section=0` — one request,
+   same redirect-following, but now returns **both** the raw wikitext
+   (still used for Titel/Untertitel/Autor/Nummer/Erscheinungsdatum via
+   `InfoboxWikitextParser`, unchanged) **and** the rendered infobox HTML.
+   Added `extractZyklus(html)` using `jsoup` (already a project
+   dependency — see `GoogleParser`/`AudibleParser` for other users) to
+   read the "Zyklus:" table row out of the rendered infobox. Verified
+   live that all three series families render a "Zyklus:" row (classic,
+   Neo, and Atlan alike), so this is a universal field, not
+   classic-series-only. `detectSeriesPrefix`/`seriesLabel` — the old
+   family-name derivation — is gone; `detectSeriesPrefix` is kept only
+   for computing the `perrypediaId` prefix, which is unrelated.
+   `PerrypediaQueryResponse.java` replaced by `PerrypediaParseResponse.java`
+   (different response shape: top-level `parse` object with `title`,
+   `redirects[]`, `wikitext`, `text`, confirmed against a real live
+   response before writing the DTO). `PerrypediaParserTest` fixtures and
+   assertions updated to match (real Zyklus values verified live:
+   Mythos / Artefakte / Im Auftrag der Kosmokraten), plus a new
+   `extractZyklus_MissingRow_ReturnsNullSeriesName` test.
+2. **A hardcoded provider-name list was missing `Perrypedia`.**
+   `metadata-advanced-fetch-options.component.ts` (the per-library
+   "Default Settings" 1st–4th-priority dialog) has its own
+   `providers`/`providersWithClear` `string[]` literals — display names
+   like `'Comicvine'`, independent of `BOOK_METADATA_PROVIDERS` and of
+   every `comicvineId`-style field-key list already audited. This is why
+   the earlier repo-wide `comicvineId` vs `perrypediaId` occurrence-count
+   audit didn't catch it — the audit only matched field-key strings, not
+   this differently-shaped display-name array. Fixed; re-audited for any
+   other `'Comicvine'`/`'Ranobedb'`-style display-name arrays afterward —
+   none remain. The metadata-*search* dialog (`BOOK_METADATA_PROVIDERS`-
+   driven) already correctly showed Perrypedia, confirmed via screenshot
+   against the live dev instance — only this one settings dialog had the
+   gap.
+
+Also investigated (from a screenshot showing a book's title as "Wenn
+Schatten bluten" for what should be PRN 389 "Wenn Sterne bluten"):
+confirmed live via Perrypedia's own search API that **no article titled
+"Wenn Schatten bluten" exists** (`totalhits: 0`), so this value cannot
+have come from a real Perrypedia fetch through this parser — there's
+nothing in `PerrypediaParser` that could turn "Sterne" into "Schatten"
+either. Most likely explanation: pre-existing/current metadata on that
+test book (e.g. from how the file was originally named), unrelated to
+this provider. Added `fetchTopMetadata_SearchYieldsNoResults_ReturnsNull`
+as a regression test using this exact confirmed zero-hit response, so a
+search that matches nothing real can't silently produce a wrong result.
+
 ## Outstanding before this is PR-ready
 
 - No frontend tests were added (e.g. for `metadata-searcher.component.ts`'s
