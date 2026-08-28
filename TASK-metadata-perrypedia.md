@@ -240,6 +240,16 @@ a one-off `alpine chown -R $(id -u):$(id -g) /workspace` container
 against the repo root. Worth remembering if mixing host and root-in-
 container builds against the same working directory again.
 
+**Rebuilt and re-pushed** after the Zyklus/`action=parse` fix (same tag,
+new digest `sha256:9f4213538a...`, was `sha256:2f256f1720e4...`). The
+`grimmory-dev-server-1` container (part of the `grimmory-dev`
+docker-compose project) tracks this exact tag but doesn't auto-pull on
+push — needs `docker compose pull && docker compose up -d` in
+`~/src/digital-library/grimmory` to actually pick up the new digest,
+unless something else (wud?) is watching it; no `wud.watch` label is set
+on that container either way, so its default-watch behavior is unknown
+from here.
+
 ## Real-instance testing findings (dev deployment)
 
 Testing against the live `grimmory-dev` instance (see
