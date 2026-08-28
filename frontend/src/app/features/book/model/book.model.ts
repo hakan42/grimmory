@@ -170,6 +170,7 @@ export interface BookMetadata {
   asin?: string;
   goodreadsId?: string;
   comicvineId?: string;
+  perrypediaId?: string;
   hardcoverId?: string;
   hardcoverBookId?: number | null;
   googleId?: string;
@@ -219,6 +220,7 @@ export interface BookMetadata {
   isbn10Locked?: boolean;
   asinLocked?: boolean;
   comicvineIdLocked?: boolean;
+  perrypediaIdLocked?: boolean;
   goodreadsIdLocked?: boolean;
   hardcoverIdLocked?: boolean;
   hardcoverBookIdLocked?: boolean;
@@ -269,6 +271,7 @@ export interface MetadataClearFlags {
   asin?: boolean;
   goodreadsId?: boolean;
   comicvineId?: boolean;
+  perrypediaId?: boolean;
   hardcoverId?: boolean;
   hardcoverBookId?: boolean;
   googleId?: boolean;

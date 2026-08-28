@@ -25,6 +25,7 @@ export class MetadataProviderFieldSelectorComponent {
     {labelKey: 'hardcover', fields: ['hardcoverId', 'hardcoverBookId', 'hardcoverRating', 'hardcoverReviewCount']},
     {labelKey: 'audible', fields: ['audibleId', 'audibleRating', 'audibleReviewCount']},
     {labelKey: 'comicvine', fields: ['comicvineId']},
+    {labelKey: 'perrypedia', fields: ['perrypediaId']},
     {labelKey: 'lubimyczytac', fields: ['lubimyczytacId', 'lubimyczytacRating']},
     {labelKey: 'ranobedb', fields: ['ranobedbId', 'ranobedbRating']}
   ];
@@ -43,6 +44,7 @@ export class MetadataProviderFieldSelectorComponent {
     'goodreadsId', 'goodreadsRating', 'goodreadsReviewCount',
     'hardcoverId', 'hardcoverBookId', 'hardcoverRating', 'hardcoverReviewCount',
     'comicvineId',
+    'perrypediaId',
     'lubimyczytacId', 'lubimyczytacRating',
     'ranobedbId', 'ranobedbRating',
     'audibleId', 'audibleRating', 'audibleReviewCount'

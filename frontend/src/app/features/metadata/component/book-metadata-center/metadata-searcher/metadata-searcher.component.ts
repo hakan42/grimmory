@@ -334,6 +334,7 @@ export class MetadataSearcherComponent implements OnDestroy, OnChanges {
     if (metadata['lubimyczytacId']) return 'lubimyczytac';
     if (metadata.comicvineId) return 'comicvine';
     if (metadata.ranobedbId) return 'ranobedb';
+    if (metadata.perrypediaId) return 'perrypedia';
     return metadata.provider?.toLowerCase() || null;
   }
 
@@ -503,6 +504,10 @@ export class MetadataSearcherComponent implements OnDestroy, OnChanges {
       return `https://ranobedb.org/book/${metadata.ranobedbId}`;
     }
 
+    if (metadata.perrypediaId) {
+      return `https://www.perrypedia.de/wiki/Quelle:${metadata.perrypediaId}`;
+    }
+
     return null;
   }
 
@@ -548,12 +553,16 @@ export class MetadataSearcherComponent implements OnDestroy, OnChanges {
       return 'RanobeDB';
     }
 
+    if (metadata.perrypediaId) {
+      return 'Perrypedia';
+    }
+
     return null;
   }
 
   trackByMetadata(index: number, metadata: BookMetadata): string {
     return metadata.googleId || metadata.goodreadsId || metadata.asin ||
-      metadata.hardcoverId || metadata.comicvineId || metadata.audibleId || index.toString();
+      metadata.hardcoverId || metadata.comicvineId || metadata.perrypediaId || metadata.audibleId || index.toString();
   }
 
   onProviderClick(event: Event) {

@@ -9,7 +9,7 @@ const EBOOK_EMBEDDABLE: ReadonlySet<string> = new Set([
   'goodreadsId', 'goodreadsRating', 'goodreadsReviewCount',
   'hardcoverId', 'hardcoverBookId', 'hardcoverRating', 'hardcoverReviewCount',
   'lubimyczytacId', 'lubimyczytacRating',
-  'comicvineId', 'ranobedbId', 'ranobedbRating',
+  'comicvineId', 'perrypediaId', 'ranobedbId', 'ranobedbRating',
   'audibleId', 'audibleRating', 'audibleReviewCount',
 ]);
 

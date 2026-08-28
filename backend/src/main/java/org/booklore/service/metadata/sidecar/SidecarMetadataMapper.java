@@ -105,6 +105,7 @@ public class SidecarMetadataMapper {
                     .hardcoverId(ids.getHardcoverId())
                     .hardcoverBookId(ids.getHardcoverBookId())
                     .comicvineId(ids.getComicvineId())
+                    .perrypediaId(ids.getPerrypediaId())
                     .lubimyczytacId(ids.getLubimyczytacId())
                     .ranobedbId(ids.getRanobedbId())
                     .audibleId(ids.getAudibleId());
@@ -193,6 +194,7 @@ public class SidecarMetadataMapper {
                 .hardcoverId(entity.getHardcoverId())
                 .hardcoverBookId(entity.getHardcoverBookId())
                 .comicvineId(entity.getComicvineId())
+                .perrypediaId(entity.getPerrypediaId())
                 .lubimyczytacId(entity.getLubimyczytacId())
                 .ranobedbId(entity.getRanobedbId())
                 .audibleId(entity.getAudibleId())

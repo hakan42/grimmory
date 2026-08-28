@@ -161,6 +161,7 @@ public class BookdropMetadataService {
                 .hardcoverBookId(truncate(extracted.getHardcoverBookId(), 100))
                 .googleId(truncate(extracted.getGoogleId(), 100))
                 .comicvineId(truncate(extracted.getComicvineId(), 100))
+                .perrypediaId(truncate(extracted.getPerrypediaId(), 100))
                 .lubimyczytacId(truncate(extracted.getLubimyczytacId(), 100))
                 .ranobedbId(truncate(extracted.getRanobedbId(), 100))
                 .doubanId(truncate(extracted.getDoubanId(), 100))
