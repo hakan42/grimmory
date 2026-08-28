@@ -35,8 +35,7 @@ import java.util.regex.Pattern;
  * <p>
  * There is no structured query API (no Semantic MediaWiki), so this reads a
  * page's raw wikitext and pulls the infobox out of it via
- * {@link InfoboxWikitextParser}. See TASK-metadata-perrypedia.md for the
- * research this is based on.
+ * {@link InfoboxWikitextParser}.
  */
 @Slf4j
 @Service
@@ -263,10 +262,9 @@ public class PerrypediaParser implements BookParser {
     }
 
     /**
-     * The infobox template name encodes which series an article belongs to
-     * ("Roman Zyklus N" / "Handlungszusammenfassung Neo Staffel N" /
-     * "Handlungszusammenfassung Atlan &lt;cycle name&gt;") — see
-     * TASK-metadata-perrypedia.md §1.
+     * The infobox template name encodes which series an article belongs to:
+     * "Roman Zyklus N" (classic), "Handlungszusammenfassung Neo Staffel N"
+     * (Neo), or "Handlungszusammenfassung Atlan &lt;cycle name&gt;" (Atlan).
      */
     private String detectSeriesPrefix(String templateName) {
         if (templateName == null) {
