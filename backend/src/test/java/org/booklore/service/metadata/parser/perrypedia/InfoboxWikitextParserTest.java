@@ -12,9 +12,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Covers all three Perrypedia series families the parser has to handle, since
- * both the infobox template name and its field set differ per series
- * (see TASK-metadata-perrypedia.md §1) — a test against only one series
- * would not catch a regression in the other two.
+ * both the infobox template name and its field set differ per series — a
+ * test against only one series would not catch a regression in the other
+ * two.
  */
 class InfoboxWikitextParserTest {
 
