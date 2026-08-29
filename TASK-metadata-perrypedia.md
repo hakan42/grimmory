@@ -297,16 +297,22 @@ New digest `sha256:500c65dd2e96...`, was `sha256:6907be1f5412...`. All
 four tags pushed (`perrypedia-metadata` + `v3.3.3-perrypedia-metadata`,
 GHCR + zot).
 
-**Deployment topology correction**: the `grimmory-dev` compose stack this
-doc previously referred to no longer exists. There is now a single
-`grimmory` compose project (`/home/grimmory/docker-compose.yml`) running
-`grimmory-server-1`, and it's already tracking
+**Deployment topology, corrected per user 2026-08-29**: `grimmory-dev`
+isn't a permanently-running stack — it's stood up on demand for changes
+the user considers possibly-breaking. Small enhancements (this
+cover-image feature included) are tested directly against the single
+always-running `grimmory` compose project
+(`/home/grimmory/docker-compose.yml`, container `grimmory-server-1`) —
+its absence from `docker compose ls` at push time doesn't mean it was
+removed, just that it wasn't needed for this round. `grimmory-server-1`
+was already tracking
 `registry.raven-alioth.ts.net/digital-library/grimmory:v3.3.3-perrypedia-metadata`
-(the zot version-prefixed tag, not the GHCR plain tag as previously
-assumed) — confirmed via `docker inspect grimmory-server-1 --format
-'{{.Config.Image}}'` before this push. [[ghcr-local-test-image-tagging]]
-and [[dev-vs-prod-instance-color]] are stale on this point and need
-updating.
+(the zot version-prefixed tag) before this push — confirmed via `docker
+inspect grimmory-server-1 --format '{{.Config.Image}}'` — so pushing
+straight to it here was the correct, intended path for a change this
+size, not an accident of a missing dev environment.
+[[ghcr-local-test-image-tagging]] and [[dev-vs-prod-instance-color]]
+corrected accordingly.
 
 ## Real-instance testing findings (dev deployment)
 
