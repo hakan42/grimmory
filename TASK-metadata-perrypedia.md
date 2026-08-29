@@ -286,6 +286,28 @@ already existed, near-instant push both times. Technique saved to
 memory as [[ghcr-local-test-image-tagging]] (name predates the zot
 addition, still covers both now).
 
+**Rebuilt and re-pushed again (2026-08-29)** after the cover-image
+feature (`extractCoverUrl`, `33ef415d8`) — full backend test suite run
+first (`./gradlew test`): 3913 tests, 0 failures, 0 errors. Frontend
+tests could **not** be run locally — no `node`/`pnpm` on this host's
+`PATH` at all (not just an unloaded version manager — no `nvm`/`volta`/
+`asdf`/`mise` install found either); the Docker build's own frontend
+stage is the only local validation of the frontend build for this round.
+New digest `sha256:500c65dd2e96...`, was `sha256:6907be1f5412...`. All
+four tags pushed (`perrypedia-metadata` + `v3.3.3-perrypedia-metadata`,
+GHCR + zot).
+
+**Deployment topology correction**: the `grimmory-dev` compose stack this
+doc previously referred to no longer exists. There is now a single
+`grimmory` compose project (`/home/grimmory/docker-compose.yml`) running
+`grimmory-server-1`, and it's already tracking
+`registry.raven-alioth.ts.net/digital-library/grimmory:v3.3.3-perrypedia-metadata`
+(the zot version-prefixed tag, not the GHCR plain tag as previously
+assumed) — confirmed via `docker inspect grimmory-server-1 --format
+'{{.Config.Image}}'` before this push. [[ghcr-local-test-image-tagging]]
+and [[dev-vs-prod-instance-color]] are stale on this point and need
+updating.
+
 ## Real-instance testing findings (dev deployment)
 
 Testing against the live `grimmory-dev` instance (see
