@@ -31,6 +31,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -42,17 +43,25 @@ import java.util.regex.Pattern;
  * {@code action=parse} to get both the raw wikitext (for fields the infobox
  * template exposes as literal parameters — title, subtitle, author, issue
  * number, publication date) and the rendered infobox HTML in a single
- * request. The story cycle ("Zyklus") is only available as expanded
- * template output, not a literal parameter, so it's read from the rendered
- * HTML infobox instead of the wikitext.
+ * request. The story cycle ("Zyklus") and the cover thumbnail are only
+ * available as expanded template output, not literal parameters, so both
+ * are read from the rendered HTML infobox instead of the wikitext.
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class PerrypediaParser implements BookParser {
 
-    private static final String PERRYPEDIA_API_URL = "https://www.perrypedia.de/api.php";
+    private static final String PERRYPEDIA_BASE_URL = "https://www.perrypedia.de";
+    private static final String PERRYPEDIA_API_URL = PERRYPEDIA_BASE_URL + "/api.php";
     private static final String USER_AGENT = "Grimmory/1.0 (Book and Comic Metadata Fetcher; +https://github.com/grimmory-tools/grimmory)";
+
+    // Icons that can appear as <img> tags in the same infobox/section-0 HTML as the cover:
+    // the disambiguation-page marker, and the reading-/audio-sample icons. Matched against
+    // the <img> "alt" attribute, which mirrors the wiki file name for all of these.
+    private static final Set<String> NON_COVER_IMAGE_FILENAMES = Set.of(
+            "Logo_Begriffsklärung.png", "Leseprobe.png", "Hörprobe.png"
+    );
 
     // PRN must be tried before PR so "PRN389" isn't mistakenly matched as prefix "PR", number "N389".
     private static final Pattern SOURCE_ID_PATTERN = Pattern.compile("(?i)\\b(PRN|PR|A)\\s*-?\\s*(\\d{1,4})\\b");
@@ -245,16 +254,19 @@ public class PerrypediaParser implements BookParser {
             title = resolvedTitle;
         }
 
+        Document doc = (html == null || html.isBlank()) ? null : Jsoup.parse(html);
+
         return BookMetadata.builder()
                 .provider(MetadataProvider.Perrypedia)
                 .perrypediaId(perrypediaId)
                 .title(title)
                 .subtitle(fields.get("Untertitel"))
                 .authors(parseAuthors(fields.get("Autor")))
-                .seriesName(extractZyklus(html))
+                .seriesName(extractZyklus(doc))
                 .seriesNumber(parseFloat(number))
                 .publishedDate(parseGermanDate(fields.get("Erscheinungsdatum")))
                 .language("de")
+                .thumbnailUrl(extractCoverUrl(doc))
                 .build();
     }
 
@@ -291,11 +303,10 @@ public class PerrypediaParser implements BookParser {
      * "Mythos"), not passed as a literal argument — so this needs the
      * rendered HTML rather than {@link InfoboxWikitextParser}.
      */
-    private String extractZyklus(String html) {
-        if (html == null || html.isBlank()) {
+    private String extractZyklus(Document doc) {
+        if (doc == null) {
             return null;
         }
-        Document doc = Jsoup.parse(html);
         for (Element row : doc.select("tr")) {
             Elements cells = row.select("td, th");
             if (cells.size() < 2) {
@@ -308,6 +319,68 @@ public class PerrypediaParser implements BookParser {
             }
         }
         return null;
+    }
+
+    /**
+     * Reads the cover thumbnail out of the rendered infobox HTML — the same document already
+     * parsed for {@link #extractZyklus}, so this needs no extra request. Filenames aren't a
+     * predictable {@code <prefix><nnnn>.jpg} pattern across series (Atlan's is e.g.
+     * {@code A800_1.JPG}), so this reads the actual {@code <img>} tag rather than constructing
+     * one, skipping the handful of non-cover icons ({@link #NON_COVER_IMAGE_FILENAMES}) that can
+     * appear in the same block. Prefers the widest {@code srcset} candidate over the bare
+     * {@code src} thumbnail.
+     */
+    private String extractCoverUrl(Document doc) {
+        if (doc == null) {
+            return null;
+        }
+        for (Element img : doc.select("img")) {
+            String filename = img.attr("alt");
+            if (NON_COVER_IMAGE_FILENAMES.stream().anyMatch(filename::equalsIgnoreCase)) {
+                continue;
+            }
+            String url = widestImageUrl(img);
+            if (url != null && !url.isBlank()) {
+                return resolveImageUrl(url);
+            }
+        }
+        return null;
+    }
+
+    /** Picks the highest-resolution URL between an {@code <img>}'s {@code src} and {@code srcset} candidates. */
+    private String widestImageUrl(Element img) {
+        String best = img.attr("src");
+        float bestDensity = 1.0f;
+        String srcset = img.attr("srcset");
+        if (srcset.isBlank()) {
+            return best;
+        }
+        for (String candidate : srcset.split(",")) {
+            String[] parts = candidate.trim().split("\\s+");
+            if (parts.length == 0 || parts[0].isBlank()) {
+                continue;
+            }
+            float density = 1.0f;
+            if (parts.length > 1 && parts[1].endsWith("x")) {
+                try {
+                    density = Float.parseFloat(parts[1].substring(0, parts[1].length() - 1));
+                } catch (NumberFormatException ignored) {
+                    // keep default density for a malformed descriptor
+                }
+            }
+            if (density > bestDensity) {
+                bestDensity = density;
+                best = parts[0];
+            }
+        }
+        return best;
+    }
+
+    private String resolveImageUrl(String url) {
+        if (url.startsWith("http://") || url.startsWith("https://")) {
+            return url;
+        }
+        return PERRYPEDIA_BASE_URL + url;
     }
 
     private List<String> parseAuthors(String raw) {

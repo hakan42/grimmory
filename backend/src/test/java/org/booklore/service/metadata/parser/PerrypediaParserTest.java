@@ -46,11 +46,26 @@ class PerrypediaParserTest {
 
     /** A minimal rendered-infobox HTML fragment with just the "Zyklus" row this parser reads. */
     private String zyklusHtml(String cycleName) {
+        return infoboxHtml(cycleName, "");
+    }
+
+    /** Same infobox fragment as {@link #zyklusHtml}, plus arbitrary extra HTML (e.g. cover {@code <img>} tags). */
+    private String infoboxHtml(String cycleName, String extraHtml) {
         return "<div class=\"mw-parser-output\"><table>"
                 + "<tr><td>Serie:</td><td>Perry Rhodan</td></tr>"
                 + "<tr><td>Zyklus:</td><td><a href=\"/wiki/X\">" + cycleName + "</a></td></tr>"
-                + "</table></div>";
+                + "</table>" + extraHtml + "</div>";
     }
+
+    /** Real infobox cover <img> markup for "PR3000.jpg", captured live 2026-08-29 — see TASK-metadata-perrypedia.md §0. */
+    private static final String PR3000_COVER_IMG =
+            "<img alt=\"PR3000.jpg\" src=\"/mediawiki/images/thumb/1/12/PR3000.jpg/360px-PR3000.jpg\" "
+                    + "srcset=\"/mediawiki/images/thumb/1/12/PR3000.jpg/540px-PR3000.jpg 1.5x, "
+                    + "/mediawiki/images/thumb/1/12/PR3000.jpg/720px-PR3000.jpg 2x\" />";
+
+    /** Real infobox disambiguation-marker <img>, precedes the cover on disambiguation-flagged pages. */
+    private static final String DISAMBIGUATION_ICON_IMG =
+            "<img alt=\"Logo_Begriffsklärung.png\" src=\"/mediawiki/images/thumb/2/2f/Logo_Begriffskl%C3%A4rung.png/25px-Logo_Begriffskl%C3%A4rung.png\" />";
 
     /** Builds a formatversion=2 action=parse response wrapping the given wikitext and rendered HTML. */
     private String buildParseResponse(String redirectFrom, String resolvedTitle, String wikitext, String html) {
@@ -137,6 +152,56 @@ class PerrypediaParserTest {
         List<BookMetadata> results = parser.fetchMetadata(book, request);
         assertThat(results).hasSize(1);
         assertThat(results.getFirst().getPerrypediaId()).isEqualTo("PR3000");
+    }
+
+    @Test
+    void extractCoverUrl_PicksWidestSrcsetCandidateAndResolvesAbsoluteUrl() throws Exception {
+        setUp();
+        mockResponse("Quelle:PR3000", 200,
+                buildParseResponse("Quelle:PR3000", "Mythos Erde (Roman)", readFixture("mythos_erde"),
+                        infoboxHtml("Mythos", PR3000_COVER_IMG)));
+
+        Book book = Book.builder().build();
+        FetchMetadataRequest request = FetchMetadataRequest.builder().title("PR 3000 - Mythos Erde").build();
+
+        BookMetadata metadata = parser.fetchTopMetadata(book, request);
+
+        assertThat(metadata).isNotNull();
+        // 720px is the widest (2x) srcset candidate, not the bare 360px src.
+        assertThat(metadata.getThumbnailUrl())
+                .isEqualTo("https://www.perrypedia.de/mediawiki/images/thumb/1/12/PR3000.jpg/720px-PR3000.jpg");
+    }
+
+    @Test
+    void extractCoverUrl_SkipsDisambiguationIconAndFindsCoverAfterIt() throws Exception {
+        setUp();
+        mockResponse("Quelle:PR3000", 200,
+                buildParseResponse("Quelle:PR3000", "Mythos Erde (Roman)", readFixture("mythos_erde"),
+                        infoboxHtml("Mythos", DISAMBIGUATION_ICON_IMG + PR3000_COVER_IMG)));
+
+        Book book = Book.builder().build();
+        FetchMetadataRequest request = FetchMetadataRequest.builder().title("PR 3000 - Mythos Erde").build();
+
+        BookMetadata metadata = parser.fetchTopMetadata(book, request);
+
+        assertThat(metadata).isNotNull();
+        assertThat(metadata.getThumbnailUrl())
+                .isEqualTo("https://www.perrypedia.de/mediawiki/images/thumb/1/12/PR3000.jpg/720px-PR3000.jpg");
+    }
+
+    @Test
+    void extractCoverUrl_NoImagePresent_ReturnsNullThumbnailUrl() throws Exception {
+        setUp();
+        mockResponse("Quelle:PR3000", 200,
+                buildParseResponse("Quelle:PR3000", "Mythos Erde (Roman)", readFixture("mythos_erde"), zyklusHtml("Mythos")));
+
+        Book book = Book.builder().build();
+        FetchMetadataRequest request = FetchMetadataRequest.builder().title("PR 3000 - Mythos Erde").build();
+
+        BookMetadata metadata = parser.fetchTopMetadata(book, request);
+
+        assertThat(metadata).isNotNull();
+        assertThat(metadata.getThumbnailUrl()).isNull();
     }
 
     @Test
