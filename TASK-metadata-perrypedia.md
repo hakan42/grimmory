@@ -444,10 +444,9 @@ search that matches nothing real can't silently produce a wrong result.
   new `perrypediaId` branches) — existing coverage for the sibling
   `comicvineId`/`ranobedbId` branches in that file wasn't audited either,
   so this matches current repo conventions rather than being a new gap.
-- Cover-image fetching is investigated below (§0) but not yet implemented.
-  `DetailedMetadataProvider` remains deferred (§4), as does confirming
-  real-world Neo/Atlan filename conventions beyond the `PRN<nnnn>`/`A<nnnn>`
-  forms implemented.
+- Cover-image fetching is implemented (§0). `DetailedMetadataProvider`
+  remains deferred (§4), as does confirming real-world Neo/Atlan filename
+  conventions beyond the `PRN<nnnn>`/`A<nnnn>` forms implemented.
 
 ## 0. Cover images (investigated 2026-08-29)
 
@@ -485,16 +484,21 @@ Notable details:
   other two) — prefer the widest `srcset` candidate. This is still a
   thumbnail, not the original upload.
 
-**Proposed approach** (not yet implemented): add an `extractCoverUrl(String
-html)` next to `extractZyklus`, reusing the same Jsoup `Document` already
-parsed from the `text` field the response already carries — no extra HTTP
-request. Pick the first `<img>` not matching the known icon filenames,
-prefer the widest `srcset` entry, prepend `https://www.perrypedia.de` to
-the relative URL, and set it on `BookMetadata.thumbnailUrl`. Fetching the
-true original (non-thumbnailed) upload would need a follow-up
+**Implemented**: `extractCoverUrl(Document doc)` in `PerrypediaParser`,
+reusing the same Jsoup `Document` (now parsed once in `toMetadata` and
+passed to both `extractZyklus` and `extractCoverUrl`, instead of each
+re-parsing the HTML). Picks the first `<img>` not matching
+`NON_COVER_IMAGE_FILENAMES`, prefers the widest `srcset` candidate via
+`widestImageUrl`, resolves a relative URL against
+`https://www.perrypedia.de` via `resolveImageUrl`, and sets
+`BookMetadata.thumbnailUrl`. Covered by three new tests in
+`PerrypediaParserTest` (widest-srcset selection, skipping the
+disambiguation icon, and the no-image-present null case) using the real
+`PR3000.jpg` markup captured live above. Fetching the true original
+(non-thumbnailed) upload would need a follow-up
 `action=query&titles=File:<name>&prop=imageinfo&iiprop=url` request —
-deferred as unnecessary; the widest `srcset` thumbnail is almost certainly
-good enough for a library cover.
+still deferred as unnecessary; the widest `srcset` thumbnail is almost
+certainly good enough for a library cover.
 
 ## 1. Data source facts (verified live, 2026-08-28)
 
