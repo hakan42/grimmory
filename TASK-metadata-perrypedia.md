@@ -444,9 +444,57 @@ search that matches nothing real can't silently produce a wrong result.
   new `perrypediaId` branches) — existing coverage for the sibling
   `comicvineId`/`ranobedbId` branches in that file wasn't audited either,
   so this matches current repo conventions rather than being a new gap.
-- Cover-image fetching and `DetailedMetadataProvider` remain deferred
-  (§4), as does confirming real-world Neo/Atlan filename conventions
-  beyond the `PRN<nnnn>`/`A<nnnn>` forms implemented.
+- Cover-image fetching is investigated below (§0) but not yet implemented.
+  `DetailedMetadataProvider` remains deferred (§4), as does confirming
+  real-world Neo/Atlan filename conventions beyond the `PRN<nnnn>`/`A<nnnn>`
+  forms implemented.
+
+## 0. Cover images (investigated 2026-08-29)
+
+Resolves the "Cover images" open question in §4 below.
+
+**Finding: feasible with the existing data source, no second request
+needed.** The same `action=parse&prop=wikitext|text` response already
+fetched for `extractZyklus` includes the rendered infobox HTML, which
+contains an `<img>` tag for the cover. Verified live via the actual
+`Quelle:<prefix><nnnn>` redirect lookup path (`fetchBySourceId`, not just
+search-matched titles) — one example per series family:
+
+- PR classic, `Quelle:PR3000` → resolves to `Mythos Erde (Roman)`:
+  `<img alt="PR3000.jpg" src="/mediawiki/images/thumb/1/12/PR3000.jpg/360px-PR3000.jpg" ... srcset="...540px-PR3000.jpg 1.5x, .../720px-PR3000.jpg 2x" />`
+- Neo, `Quelle:PRN389` → resolves to `Wenn Sterne bluten`:
+  `<img alt="Neo389.jpg" src=".../180px-Neo389.jpg" srcset="...270px... 1.5x, .../360px... 2x" />`
+- Atlan, `Quelle:A800` → resolves to `Die Zeitfestung`:
+  `<img alt="A800_1.JPG" src=".../180px-A800_1.JPG" srcset="...270px... 1.5x, .../360px... 2x" />`
+
+Notable details:
+
+- Filenames are **not** a clean `<prefix><nnnn>.jpg` convention across
+  series — Atlan's is `A800_1.JPG` (mixed case, `_1` suffix). This
+  confirms the risk the original open question flagged. Don't construct
+  the `Datei:` filename from the id; read it off the rendered `<img>`
+  instead.
+- The infobox/section-0 HTML can contain other `<img>` tags that aren't
+  the cover: `Logo_Begriffsklärung.png` (disambiguation marker icon, seen
+  on `Mythos Erde (Roman)` since it's also a disambiguation page) and
+  `Leseprobe.png`/`Hörprobe.png` (reading-sample/audio-sample icons, seen
+  whenever those fields are populated). The cover is the first `<img>`
+  whose filename isn't one of these three.
+- `srcset` carries higher-resolution variants than the bare `src`
+  thumbnail (up to 720px wide for PR3000 in this sample, 360px for the
+  other two) — prefer the widest `srcset` candidate. This is still a
+  thumbnail, not the original upload.
+
+**Proposed approach** (not yet implemented): add an `extractCoverUrl(String
+html)` next to `extractZyklus`, reusing the same Jsoup `Document` already
+parsed from the `text` field the response already carries — no extra HTTP
+request. Pick the first `<img>` not matching the known icon filenames,
+prefer the widest `srcset` entry, prepend `https://www.perrypedia.de` to
+the relative URL, and set it on `BookMetadata.thumbnailUrl`. Fetching the
+true original (non-thumbnailed) upload would need a follow-up
+`action=query&titles=File:<name>&prop=imageinfo&iiprop=url` request —
+deferred as unnecessary; the widest `srcset` thumbnail is almost certainly
+good enough for a library cover.
 
 ## 1. Data source facts (verified live, 2026-08-28)
 
@@ -659,11 +707,10 @@ Frontend changes:
 
 ## 4. Open questions to resolve before/during implementation
 
-- **Cover images**: filename convention on `Datei:` pages is unconfirmed.
-  Needs a live check against a few issue numbers (e.g. do `PR3000` and
-  `PR3001` covers follow a predictable `Datei:PR<nnnn>.jpg`-style name?) or
-  a decision to skip cover fetching for v1 and rely on the local file's
-  own extracted cover.
+- **Cover images**: resolved by investigation, see §0 — filename
+  convention isn't predictable across series, but the cover is available
+  as an `<img>` in the already-fetched infobox HTML, no extra request
+  needed. Not yet implemented.
 - **Language/audience fit**: this provider is useful only for the German
   Perry Rhodan/Atlan Heftroman audience — confirm this is a wanted
   addition before investing in the wikitext parser (higher parsing risk
