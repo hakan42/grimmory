@@ -109,6 +109,9 @@ public class SettingPersistenceHelper {
         MetadataProviderSettings.Ranobedb defaultRanobedb = new MetadataProviderSettings.Ranobedb();
         defaultRanobedb.setEnabled(false);
 
+        MetadataProviderSettings.Perrypedia defaultPerrypedia = new MetadataProviderSettings.Perrypedia();
+        defaultPerrypedia.setEnabled(false);
+
         defaultMetadataProviderSettings.setAmazon(defaultAmazon);
         defaultMetadataProviderSettings.setGoogle(defaultGoogle);
         defaultMetadataProviderSettings.setGoodReads(defaultGoodreads);
@@ -116,6 +119,7 @@ public class SettingPersistenceHelper {
         defaultMetadataProviderSettings.setComicvine(defaultComicvine);
         defaultMetadataProviderSettings.setRanobedb(defaultRanobedb);
         defaultMetadataProviderSettings.setDouban(defaultDouban);
+        defaultMetadataProviderSettings.setPerrypedia(defaultPerrypedia);
 
         return defaultMetadataProviderSettings;
     }
@@ -148,6 +152,7 @@ public class SettingPersistenceHelper {
                 .asin(nullProvider)
                 .goodreadsId(nullProvider)
                 .comicvineId(nullProvider)
+                .perrypediaId(nullProvider)
                 .hardcoverId(nullProvider)
                 .hardcoverBookId(nullProvider)
                 .googleId(nullProvider)
@@ -187,6 +192,7 @@ public class SettingPersistenceHelper {
                 .asin(true)
                 .goodreadsId(true)
                 .comicvineId(true)
+                .perrypediaId(true)
                 .hardcoverId(true)
                 .hardcoverBookId(true)
                 .googleId(true)
@@ -344,6 +350,7 @@ public class SettingPersistenceHelper {
         fields.setHardcoverRating(true);
         fields.setHardcoverReviewCount(true);
         fields.setComicvineId(true);
+        fields.setPerrypediaId(true);
         fields.setLubimyczytacId(true);
         fields.setLubimyczytacRating(true);
         fields.setRanobedbRating(true);

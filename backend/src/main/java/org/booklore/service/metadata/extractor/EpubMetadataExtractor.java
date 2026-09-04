@@ -46,17 +46,18 @@ public class EpubMetadataExtractor implements FileMetadataExtractor {
     private final ObjectMapper objectMapper;
     private final CoverDetectorService coverDetectorService;
 
-    private static final Map<String, BiConsumer<BookMetadata.BookMetadataBuilder, String>> CALIBRE_IDENTIFIER_PREFIXES = Map.of(
-            "amazon", BookMetadata.BookMetadataBuilder::asin,
-            "asin", BookMetadata.BookMetadataBuilder::asin,
-            "mobi-asin", BookMetadata.BookMetadataBuilder::asin,
-            "goodreads", BookMetadata.BookMetadataBuilder::goodreadsId,
-            "google", BookMetadata.BookMetadataBuilder::googleId,
-            "hardcover", BookMetadata.BookMetadataBuilder::hardcoverId,
-            "hardcover_book", BookMetadata.BookMetadataBuilder::hardcoverBookId,
-            "comicvine", BookMetadata.BookMetadataBuilder::comicvineId,
-            "lubimyczytac", BookMetadata.BookMetadataBuilder::lubimyczytacId,
-            "ranobedb", BookMetadata.BookMetadataBuilder::ranobedbId);
+    private static final Map<String, BiConsumer<BookMetadata.BookMetadataBuilder, String>> CALIBRE_IDENTIFIER_PREFIXES = Map.ofEntries(
+            Map.entry("amazon", BookMetadata.BookMetadataBuilder::asin),
+            Map.entry("asin", BookMetadata.BookMetadataBuilder::asin),
+            Map.entry("mobi-asin", BookMetadata.BookMetadataBuilder::asin),
+            Map.entry("goodreads", BookMetadata.BookMetadataBuilder::goodreadsId),
+            Map.entry("google", BookMetadata.BookMetadataBuilder::googleId),
+            Map.entry("hardcover", BookMetadata.BookMetadataBuilder::hardcoverId),
+            Map.entry("hardcover_book", BookMetadata.BookMetadataBuilder::hardcoverBookId),
+            Map.entry("comicvine", BookMetadata.BookMetadataBuilder::comicvineId),
+            Map.entry("perrypedia", BookMetadata.BookMetadataBuilder::perrypediaId),
+            Map.entry("lubimyczytac", BookMetadata.BookMetadataBuilder::lubimyczytacId),
+            Map.entry("ranobedb", BookMetadata.BookMetadataBuilder::ranobedbId));
 
     private static final Map<String, BiConsumer<BookMetadata.BookMetadataBuilder, String>> CALIBRE_FIELD_MAPPINGS = Map.ofEntries(
             Map.entry("#subtitle", BookMetadata.BookMetadataBuilder::subtitle),
@@ -216,6 +217,7 @@ public class EpubMetadataExtractor implements FileMetadataExtractor {
                             case BookLoreMetadata.NS_PREFIX + ":asin" -> builderMeta.asin(content);
                             case BookLoreMetadata.NS_PREFIX + ":goodreads_id" -> builderMeta.goodreadsId(content);
                             case BookLoreMetadata.NS_PREFIX + ":comicvine_id" -> builderMeta.comicvineId(content);
+                            case BookLoreMetadata.NS_PREFIX + ":perrypedia_id" -> builderMeta.perrypediaId(content);
                             case BookLoreMetadata.NS_PREFIX + ":ranobedb_id" -> builderMeta.ranobedbId(content);
                             case BookLoreMetadata.NS_PREFIX + ":hardcover_id" -> builderMeta.hardcoverId(content);
                             case BookLoreMetadata.NS_PREFIX + ":google_books_id" -> builderMeta.googleId(content);
@@ -308,6 +310,7 @@ public class EpubMetadataExtractor implements FileMetadataExtractor {
                                 }
                                 case "GOODREADS" -> builderMeta.goodreadsId(value);
                                 case "COMICVINE" -> builderMeta.comicvineId(value);
+                                case "PERRYPEDIA" -> builderMeta.perrypediaId(value);
                                 case "RANOBEDB" -> builderMeta.ranobedbId(value);
                                 case "GOOGLE" -> builderMeta.googleId(value);
                                 case "AMAZON" -> builderMeta.asin(value);

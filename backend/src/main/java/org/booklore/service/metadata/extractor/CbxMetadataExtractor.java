@@ -373,6 +373,7 @@ public class CbxMetadataExtractor implements FileMetadataExtractor {
                 case "GoodreadsId" -> builder.goodreadsId(value);
                 case "ASIN" -> builder.asin(value);
                 case "ComicvineId" -> builder.comicvineId(value);
+                case "PerrypediaId" -> builder.perrypediaId(value);
             }
         }
     }

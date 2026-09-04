@@ -140,6 +140,7 @@ public class DuplicateDetectionService {
         addIfPresent(ids, "asin:", meta.getAsin());
         addIfPresent(ids, "audible:", meta.getAudibleId());
         addIfPresent(ids, "comicvine:", meta.getComicvineId());
+        addIfPresent(ids, "perrypedia:", meta.getPerrypediaId());
         return ids;
     }
 

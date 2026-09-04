@@ -10,6 +10,7 @@ public class MetadataProviderSettings {
     private Goodreads goodReads;
     private Hardcover hardcover;
     private Comicvine comicvine;
+    private Perrypedia perrypedia;
     private Ranobedb ranobedb;
     private Douban douban;
     @JsonProperty("lubimyczytac")
@@ -45,6 +46,11 @@ public class MetadataProviderSettings {
     public static class Comicvine {
         private boolean enabled;
         private String apiKey;
+    }
+
+    @Data
+    public static class Perrypedia {
+        private boolean enabled;
     }
 
     @Data

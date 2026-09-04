@@ -35,6 +35,7 @@ export class MetadataAdvancedFetchOptionsComponent implements OnChanges {
     'goodreadsId', 'goodreadsRating', 'goodreadsReviewCount',
     'hardcoverId', 'hardcoverBookId', 'hardcoverRating', 'hardcoverReviewCount', 'moods', 'tags',
     'comicvineId',
+    'perrypediaId',
     'lubimyczytacId', 'lubimyczytacRating',
     'ranobedbId', 'ranobedbRating',
     'audibleId', 'audibleRating', 'audibleReviewCount'
@@ -46,6 +47,7 @@ export class MetadataAdvancedFetchOptionsComponent implements OnChanges {
     'goodreadsId', 'goodreadsRating', 'goodreadsReviewCount',
     'hardcoverId', 'hardcoverBookId', 'hardcoverRating', 'hardcoverReviewCount', 'moods', 'tags',
     'comicvineId',
+    'perrypediaId',
     'lubimyczytacId', 'lubimyczytacRating',
     'ranobedbId', 'ranobedbRating',
     'audibleId', 'audibleRating', 'audibleReviewCount',
@@ -57,8 +59,8 @@ export class MetadataAdvancedFetchOptionsComponent implements OnChanges {
     'language', 'categories', 'cover', 'pageCount',
   ];
 
-  providers: string[] = ['Amazon', 'Google', 'GoodReads', 'Hardcover', 'Comicvine', 'Douban', 'Lubimyczytac', 'Ranobedb', 'Audible'];
-  providersWithClear: string[] = ['Clear All', 'Amazon', 'Google', 'GoodReads', 'Hardcover', 'Comicvine', 'Douban', 'Lubimyczytac', 'Ranobedb', 'Audible'];
+  providers: string[] = ['Amazon', 'Google', 'GoodReads', 'Hardcover', 'Comicvine', 'Perrypedia', 'Douban', 'Lubimyczytac', 'Ranobedb', 'Audible'];
+  providersWithClear: string[] = ['Clear All', 'Amazon', 'Google', 'GoodReads', 'Hardcover', 'Comicvine', 'Perrypedia', 'Douban', 'Lubimyczytac', 'Ranobedb', 'Audible'];
 
   refreshCovers: boolean = false;
   mergeCategories: boolean = false;
@@ -101,6 +103,9 @@ export class MetadataAdvancedFetchOptionsComponent implements OnChanges {
 
     // Comicvine
     'comicvineId',
+
+    // Perrypedia
+    'perrypediaId',
 
     // Lubimyczytac
     'lubimyczytacId', 'lubimyczytacRating',
@@ -271,6 +276,7 @@ export class MetadataAdvancedFetchOptionsComponent implements OnChanges {
       'asin': 'Amazon ASIN',
       'goodreadsId': 'Goodreads ID',
       'comicvineId': 'Comicvine ID',
+      'perrypediaId': 'Perrypedia ID',
       'hardcoverId': 'Hardcover ID',
       'hardcoverBookId': 'Hardcover Book ID',
       'googleId': 'Google Books ID',

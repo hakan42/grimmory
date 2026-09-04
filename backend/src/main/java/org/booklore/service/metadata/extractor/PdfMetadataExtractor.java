@@ -212,6 +212,7 @@ public class PdfMetadataExtractor implements FileMetadataExtractor {
         findCustomField(xmp, rawXmp, "amazonId").ifPresent(metadataBuilder::asin);
         findCustomField(xmp, rawXmp, "asin").ifPresent(metadataBuilder::asin);
         findCustomField(xmp, rawXmp, "comicvineId").ifPresent(metadataBuilder::comicvineId);
+        findCustomField(xmp, rawXmp, "perrypediaId").ifPresent(metadataBuilder::perrypediaId);
         findCustomField(xmp, rawXmp, "ranobedbId").ifPresent(metadataBuilder::ranobedbId);
         findCustomField(xmp, rawXmp, "lubimyczytacId").ifPresent(metadataBuilder::lubimyczytacId);
         findCustomField(xmp, rawXmp, "hardcoverId").ifPresent(metadataBuilder::hardcoverId);
@@ -234,6 +235,7 @@ public class PdfMetadataExtractor implements FileMetadataExtractor {
                 case "amazon", "asin", "amazonid" -> metadataBuilder.asin(value);
                 case "goodreads" -> metadataBuilder.goodreadsId(value);
                 case "comicvine" -> metadataBuilder.comicvineId(value);
+                case "perrypedia" -> metadataBuilder.perrypediaId(value);
                 case "ranobedb" -> metadataBuilder.ranobedbId(value);
                 case "lubimyczytac" -> metadataBuilder.lubimyczytacId(value);
                 case "hardcover" -> metadataBuilder.hardcoverId(value);
