@@ -57,3 +57,7 @@ backend/src/main/resources/application-local.yaml
 /.pnpm-store/
 /.angular/
 .worktrees/
+
+### Local task planning files (see AGENTS.md "Task files") ###
+/TASK.md
+/TASK-*.md
