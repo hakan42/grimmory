@@ -12,20 +12,64 @@ Two branches, two different jobs:
 
 - **`perrypedia-metadata-source-wip`** (this branch) — the working branch.
   Iterative commits land here as work progresses, including this TASK file
-  and [[TASK-track-upstream-releases.md]] as their own separate commits
-  (not `AGENTS.md`/`CLAUDE.md` — those are never committed at all, per
-  [[TASK-init.md|the original init task]]).
+  and [[TASK-track-upstream-releases.md]] as their own separate commits.
+  **Correction 2026-09-16 (superseded twice, see log below)**: as of
+  2026-09-16, `AGENTS.md`, `CLAUDE.md`, `.gitignore` (a `TASK.md`/
+  `TASK-*.md` exclusion entry), and **every** `TASK*.md` file in the repo
+  are committed for real on this branch, at the user's explicit request —
+  fully reversing the original init task's "not to be committed" call
+  ([[TASK-init.md]]). Force-added past the `.gitignore` entry where
+  needed, since these files are gitignored specifically so an *ordinary*
+  `git add -A` never sweeps them in by accident, not to make them
+  uncommittable outright.
 - **`perrypedia-metadata-source`** — the clean PR branch, created only once
   the `-wip` branch is working end-to-end. Cut fresh from whatever
   `upstream/develop` is at that moment (not from `-wip`), and populated
   with **one single commit** containing the actual implementation
   (backend + frontend + migration + tests) — no `.md` files at all, so the
   diff GitHub shows on the PR is exactly the code change, nothing else.
+  **Given the above, this exclusion list has grown**: every `TASK*.md`
+  path, `AGENTS.md`, `CLAUDE.md`, and `.gitignore` all need explicit
+  exclusion when cutting this branch — none of them are `.md`-filter-safe
+  on their own (`.gitignore` isn't a `.md` path at all) or safe to assume
+  excluded just because they were excluded before. Confirm with something
+  like `git diff origin/develop..<wip-branch> -- . ':!*.md' ':!.gitignore'`
+  (still needs `AGENTS.md`/`CLAUDE.md` covered by the `*.md` glob, and
+  every `TASK*.md` also matches `*.md` — the one path that glob does
+  **not** catch is `.gitignore`) rather than assuming any prior round's
+  filter is still sufficient.
 
 This keeps the messy/iterative history and the planning docs on `-wip`
 only, while `perrypedia-metadata-source` stays a clean, single-commit,
 docs-free PR candidate. Saved to memory as a general pattern for future
 work in this repo, not just this one feature.
+
+**2026-09-16: `AGENTS.md`/`.gitignore` committed, reversing part of the
+original "never committed" call.** While writing
+[[TASK-perrypedia-full-cover-image.md]] it came out that `TASK.md`/
+`TASK-*.md` weren't actually gitignored in this repo, contradicting
+`AGENTS.md`'s own "Task files" section (which says these must never be
+committed) and the general-purpose `CLAUDE.md` convention for handling
+task files. Fixed by adding a `/TASK.md`/`/TASK-*.md` entry to
+`.gitignore` and a one-line note in `AGENTS.md` confirming they're
+gitignored — user then explicitly asked to commit both, plus (for this
+one instance only) the `TASK-perrypedia-full-cover-image.md` file itself
+(force-added past its own new gitignore exclusion). **`AGENTS.md` is now
+a real committed file on this branch**, no longer excluded the way
+`CLAUDE.md` was at the time.
+
+**2026-09-16, later the same day: everything else committed too.** User
+asked to commit *all* remaining `TASK*.md` files plus `CLAUDE.md` as
+well — no longer a one-off exception for a single TASK file.
+`AGENTS.md`'s "Task files" section was revised accordingly: these files
+are gitignored so a *blanket* `git add -A` doesn't sweep them in
+unintentionally, but deliberate force-commits on a working branch like
+this one are the established, sanctioned workflow, not a violation of
+the gitignore. **The one rule that did not change**: none of this is
+ever to reach a real pull request. That's now stated directly in
+`AGENTS.md`'s "Task files" section itself (the durable, committed home
+for this rule) as well as in the "Branch & commit strategy" note above
+and in memory (`wip-then-clean-pr-branch`).
 
 **Done**: cut in a separate `git worktree` (never the main checkout
 directly, to keep the uncommitted local-only
@@ -475,6 +519,550 @@ search that matches nothing real can't silently produce a wrong result.
 - Cover-image fetching is implemented (§0). `DetailedMetadataProvider`
   remains deferred (§4), as does confirming real-world Neo/Atlan filename
   conventions beyond the `PRN<nnnn>`/`A<nnnn>` forms implemented.
+- **Perrypedia ID is not written to the EPUB `content.opf.ftl` template**
+  (unlike Amazon/GoodReads, and unlike Apple Books after upstream #2616).
+  Investigated during the 2026-09-15 rebase below: most single-ID
+  providers (Comicvine, Hardcover, Douban, Ranobedb, Lubimyczytac — the
+  pattern this provider followed) also don't get this treatment, so it's
+  not a regression versus the chosen pattern. **Deliberately left as an
+  open item, not added in this pass** — only worth doing if Perrypedia IDs
+  embedded directly in generated EPUBs turns out to matter.
+
+## 2026-09-15: rebase onto updated `develop`, upstream comparison
+
+`origin/develop` had moved 62 commits since this branch was cut
+(`0e675495b` → `539a0e080`), including upstream's own **OpenLibrary**
+(#1764) and **Apple Books** (#1780) providers — landed independently, in
+parallel with this work, following the same registration checklist
+([[AGENTS.md]]). Local `develop` also had 1 stray commit (an upstream bot's
+GoodReads API-key rotation, see [[goodreads-token-local-only]]) not
+reachable from `origin/develop`; left alone rather than force-reset, since
+rebasing onto `origin/develop` directly didn't require it.
+
+`git rebase origin/develop` hit real conflicts in 11 files, all from
+"register a new provider" touchpoints Apple Books/OpenLibrary and
+Perrypedia both landed on independently: `BookParserConfig.java`,
+`MetadataProvider.java`, `BookRuleEvaluatorService.java`,
+`CbxMetadataExtractor.java`, `EpubMetadataExtractor.java`,
+`CbxMetadataWriter.java`, `lock-unlock-metadata-dialog.component.ts`,
+`magic-shelf-component.ts`, `metadata-searcher.component.ts`,
+`metadata-advanced-fetch-options.component.ts`, plus a **modify/delete**
+conflict on `SettingPersistenceHelper.java` — upstream's
+`refactor(settings): simplify app settings service` (#2527) deleted that
+355-line file entirely, inlining it into `AppSettingService.java` (429
+lines). Resolved by porting Perrypedia's three additions (default
+settings entry, null-provider/default-true field-builder entries,
+`MetadataProviderSpecificFields` default-true entry) into the
+corresponding new locations in `AppSettingService.java`, then `git rm`-ing
+the old file. All resolutions were straightforward unions (both sides
+added a provider/field to the same list) except one: this branch's own
+later commit `18031727c` ("fix missing provider in priority dialog")
+turned out to be adding `'Perrypedia'` to `providers`/`providersWithClear`
+in `metadata-advanced-fetch-options.component.ts` in the **pre-refactor
+single-line array format** — by the time that commit replayed, HEAD
+already had the multi-line format (from Apple Books/OpenLibrary), so it
+looked like a fresh conflict rather than the redundant reapplication it
+actually was; resolved by keeping HEAD's (already-correct) side.
+
+**One silent regression caught, not flagged as a conflict by git**: the
+very first auto-merge of `metadata-advanced-fetch-options.component.ts`
+(applying the main Perrypedia commit, before `18031727c` replayed)
+silently dropped `'Perrypedia'` from those same `providers` /
+`providersWithClear` arrays — git resolved it without a marker because the
+line-level diff happened to not overlap, even though the resulting file
+was wrong. Caught by manually reading the resolved file rather than
+trusting "Auto-merging" output; fixed inline, then superseded correctly
+when `18031727c` replayed. Lesson: after any rebase that touches a file
+with no reported conflict, still worth a read if that file is one your
+own commits also touch non-trivially — grep-for-your-feature-name sweeps
+alone won't catch a dropped array entry when the same identifier still
+appears elsewhere in the file for unrelated reasons.
+
+**Database migration collision, found while investigating**: this
+branch's `V147__Add_perrypedia_id_column.sql` collided with upstream's own
+new `V147__Add_applebooks_provider.sql` (and `V148__Add_openlibrary_provider.sql`).
+Renamed this branch's migration to `V149__Add_perrypedia_id_column.sql`
+(content unchanged, so its checksum is unchanged) as part of the rebase.
+**This only fixes the source tree — it does not fix a database that
+already ran the old V147.** Any database (e.g. a personal dev instance)
+that applied the original `V147__Add_perrypedia_id_column.sql` has a
+`flyway_schema_history` row for version `147` describing that migration.
+Deploying the renumbered code as-is will make Flyway see the classpath's
+new (different) `V147__Add_applebooks_provider.sql` and complain about a
+checksum/description mismatch for version 147, *and* try to (re-)run
+`V149__Add_perrypedia_id_column.sql` as a new pending migration — which
+will fail with a "column already exists" error, since that DDL already
+ran.
+
+**Reconciled against `grimmory-dev-db-1` on 2026-09-15 — and the first
+attempt was incomplete, corrected here.** Step 1 below (the schema_history
+row repoint) is necessary but **not sufficient on its own**: it stops the
+checksum/description mismatch for version 147, but it also marks 149 as
+already-applied while 147/148 are still pending — which Flyway's default
+validator rejects as "out of order" (`Detected resolved migration not
+applied to database: 147/148`), crashing the app on startup
+(`FlywayValidateException` → `UnsatisfiedDependencyException` on
+`jwtSecretRepository` → Tomcat fails to start). Confirmed live: this is
+exactly what happened when `grimmory-dev-server-1` was restarted onto the
+rebased image after step 1 alone.
+
+**Step 2 fixes that**: apply the actual pending `V147`/`V148` DDL through
+Flyway itself (not hand-crafted `INSERT`s — Flyway computes its own
+checksums, which would be tedious and error-prone to replicate by hand),
+using `-outOfOrder=true` for this one catch-up run only. This is a one-off
+CLI invocation against the database, not a permanent app config change —
+`FlywayConfig.java` still has `outOfOrder` off by default, so this
+doesn't affect how the app behaves on any other database. Both new
+migrations are trivial and idempotent (`ADD COLUMN IF NOT EXISTS`), so
+this is safe to run even if unsure whether they already partially landed.
+
+```sql
+-- Step 1: repoint the old V147 row to V149 (checksum unchanged -- the SQL
+-- content of the file didn't change, only its filename/version did).
+-- Safe to run against a database that never had the old V147 (no-op) and
+-- safe to run twice (no-op the second time).
+UPDATE flyway_schema_history
+SET version = '149',
+    description = 'Add perrypedia id column',
+    script = 'V149__Add_perrypedia_id_column.sql'
+WHERE version = '147'
+  AND script = 'V147__Add_perrypedia_id_column.sql';
+```
+
+```sh
+# Step 2: apply the now-pending V147 (Apple Books) / V148 (OpenLibrary)
+# migrations out of order, letting Flyway itself compute correct checksums.
+# Run from a host that can reach the target DB's docker network/host+port;
+# point -url/-user/-password at dev or prod as appropriate.
+docker run --rm --network <db's docker network> \
+  -v <repo>/backend/src/main/resources/db/migration:/flyway/sql:ro \
+  flyway/flyway:12.4.0 \
+  -url="jdbc:mariadb://<db host>:3306/grimmory" \
+  -user=grimmory -password='<db password>' \
+  -outOfOrder=true \
+  migrate
+```
+
+```sql
+-- Verify: 145, 146, 147, 148, 149 should all show success=1, in whatever
+-- installed_rank order they actually ran (147/148 will show a later
+-- installed_rank than 149, and an empty/later "Installed On" than 149 --
+-- that's expected and harmless; the (version, success) columns are what
+-- Flyway's own validator checks, not installed_rank order).
+SELECT installed_rank, version, description, script, success
+FROM flyway_schema_history
+ORDER BY installed_rank;
+```
+
+Run both steps against each database **before** starting the app on the
+rebased image. If step 1 matches 0 rows, that database never ran the old
+V147 — skip straight to step 2 (147/148 will just apply as ordinary
+pending migrations, no `-outOfOrder` needed in that case).
+
+**Done for `grimmory-dev-db-1`** (2026-09-15): both steps run, verified
+`book_metadata` has `applebooks_*`/`openlibrary_*`/`perrypedia_*` columns
+and `flyway_schema_history` shows 147/148/149 all `success=1`;
+`grimmory-dev-server-1` restarted clean (Tomcat up in ~9s, healthcheck
+passing).
+
+**Done for `grimmory-db-1` (prod) too** (2026-09-15): same two steps run
+against it, same verified end state (147/148/149 all `success=1`, all
+three column sets present). `grimmory-server-1` itself was **not**
+touched or restarted — it's still running the old
+`v3.3.3-perrypedia-metadata` image, which ignores the new columns; the
+database is just pre-reconciled for whenever `v3.4.0-perrypedia-metadata`
+actually gets deployed there. `docker-compose.template` in the `grimmory`
+deploy repo has already been bumped to that tag (uncommitted there too),
+but the live `docker-compose.yml` and running container are untouched.
+
+**Verified against the two upstream PRs the user flagged** (#2616 fixing
+Apple Books' missing `content.opf.ftl` entry, #2609 fixing an Apple
+Books i18n copy-paste mislabel): Perrypedia has neither issue — see the
+`content.opf.ftl` item above, and its `perrypediaId` i18n strings all
+correctly read "Perrypedia ID" (no copy-paste-from-another-provider
+mistake). Not yet done: a full field-by-field diff against OpenLibrary's
+(#1764) or Apple Books' (#1780) complete implementations.
+
+**Verification**: `./gradlew compileJava compileTestJava` passes clean.
+No local `node`/`pnpm` toolchain in this environment, but the frontend
+build is dockerized (`Dockerfile`'s `frontend-build` stage runs `pnpm -C
+frontend run build:prod`) — ran `docker buildx build --target
+frontend-build .` directly, which type-checks as part of `ng build
+--configuration production`. Passes clean, including the
+`metadata-advanced-fetch-options.component.ts` three-array restructure.
+
+Not yet pushed — rebase was done locally; `origin/perrypedia-metadata-source-wip`
+still points at the pre-rebase history, so publishing this needs a
+force-push once reviewed.
+
+## 2026-09-15: pushed rebase, deployed to dev + prod, recut clean PR branch
+
+`perrypedia-metadata-source-wip` force-pushed to `origin` with the
+rebased history above. Deployed the rebuilt image
+(`v3.4.0-perrypedia-metadata`, see local-test-image log) to both
+`grimmory-dev` and prod (`grimmory-server-1`) — both confirmed healthy,
+Flyway clean, frontend serving the correct new build hashes.
+`docker-compose.template` in the `grimmory` deploy repo bumped to match
+and pushed (`dc7b111`).
+
+**Recut `perrypedia-metadata-source`** (the clean PR branch — see
+[[wip-then-clean-pr-branch]]): the existing one (`d43f9244c`) was cut
+from the old pre-rebase base (`0279c15dc`), 62 commits stale versus
+`origin/develop`'s current tip. Recut in a fresh `git worktree` from
+current `origin/develop` (`539a0e080`): generated the full code diff
+between `origin/develop` and the rebased `-wip` branch excluding every
+`*.md` path (`git diff origin/develop..perrypedia-metadata-source-wip --
+. ':!*.md'`), applied it cleanly (`git apply --check` passed first-try,
+no conflicts), squashed into one commit (`6be5523bd`, 66 files, zero
+`.md` files). Force-pushed over the old branch tip on `origin`.
+
+**Fresh verification on the clean branch** (not just the -wip branch):
+- Backend: `./gradlew test` — **3961 tests, 0 failures, 0 errors**
+  (counted from the JUnit XML reports directly, not just eyeballing
+  console output).
+- Frontend build: `docker buildx build --target frontend-build .` —
+  passes, same as on `-wip`.
+- Frontend tests: ran `pnpm run test` for real numbers (no `node` on
+  this host, so via a throwaway `node:24-alpine` container bind-mounting
+  a temporary worktree) — **306 test files / 1720 tests passed** (80
+  files / 136 tests skipped, pre-existing skips unrelated to this
+  change). Slightly different from the draft PR description's "306
+  files / 1709 tests" figure — that draft predates today's rebase;
+  updated to this real count.
+  **Same environment gotcha as the earlier Docker/Gradle mount** (see
+  local-test-image log): running as root inside the container left the
+  temp worktree root-owned, breaking `git worktree remove` afterward;
+  fixed the same way, with a one-off `alpine chown -R $(id -u):$(id -g)`
+  against the mount before retrying the removal.
+
+**Not yet opened as a real PR — found a process reason to pause**: right
+as this was being prepared, the user opened
+https://github.com/orgs/grimmory-tools/discussions/2643 ("Perrypedia
+Metadata Provider" feature request). grimmory-tools/grimmory's PR
+template checklist requires "This PR links and implements an accepted
+issue" (confirmed against the Apple Books #1780 / OpenLibrary #1764 PR
+bodies fetched earlier as comparables) — a same-session discussion is
+unlikely to already be accepted. See
+[[perrypedia-upstream-discussion]]. **Decided (user, 2026-09-15): wait for the discussion first.** Branch
+`perrypedia-metadata-source` stays pushed and ready; do not open the PR
+until discussion #2643 gets a response/traction. Re-check its status
+before opening.
+
+The existing `TASK-pr-description-perrypedia.md` draft's title/body are
+still a good starting point but need: the discussion link added, and the
+test-count line refreshed to the numbers above.
+
+## 2026-09-16: second rebase onto `develop` (now at `v3.4.1`), deploy tag bump
+
+`origin/develop` (and `upstream/develop`) moved again since the
+2026-09-15 rebase: `539a0e080` → `2d7a3e9c5`, including upstream's own
+**modernised metadata searcher component**
+(`fix(ui): modernise the metadata searcher component`, #2631) and a
+`v3.4.1` tag. Re-fetched both `origin` and `upstream`, then
+`git rebase origin/develop` on `perrypedia-metadata-source-wip`.
+
+**One conflict** (vs. 11 last time — the provider-registration
+touchpoints from the previous rebase are all long since merged and
+didn't move again): `metadata-searcher.component.ts`. Upstream's #2631
+rewrote the whole component (signal-based `providerHref`/`providerName`/
+`providerKey` computed off `result.provider` directly, plus a new
+`detailRequestFor`/`DETAIL_ID_FIELD` flow for providers implementing
+`DetailedMetadataProvider`), replacing the old id-sniffing helpers
+(`getProviderFromMetadata`, the old `getProviderHref`, `getProviderName`,
+`trackByMetadata`) this branch's Perrypedia commit had extended. Verified
+those old helpers aren't referenced anywhere else (grep across the
+component directory) before dropping them — the new architecture doesn't
+need a replacement for `getProviderFromMetadata`/`trackByMetadata` at
+all. Ported the one bit of real behavior forward: added a `case
+'Perrypedia':` arm to the new `providerHref` switch
+(`https://www.perrypedia.de/wiki/Quelle:${result.perrypediaId}`, matching
+the old inline URL). `PerrypediaParser` only implements `BookParser`, not
+`DetailedMetadataProvider`, so no `DETAIL_ID_FIELD` entry needed —
+confirmed against the backend source, not assumed. `npx tsc --noEmit`
+clean on the resolved file afterward.
+
+Rebase completed cleanly (23 commits replayed). Working-tree changes
+present before the rebase (unrelated `docker-compose.yml` local test-tag
+edit, in-progress `metadata-editor` moods/tags work, untracked
+`AGENTS.md`/`CLAUDE.md`/`TASK-init.md`) were stashed first and popped
+back afterward with no conflicts.
+
+**Deploy tag bumped to `v3.4.1-perrypedia-metadata`** in
+`docker-compose.template` in the sibling `grimmory` deploy repo (was
+`v3.4.0-perrypedia-metadata`), validated with that repo's
+`validate-compose` skill (renders and parses). **Left uncommitted** in
+that repo per its `bump-version` skill's convention (only commit a
+version bump when asked) — review and commit separately there. Note this
+is only the version-label bump, matching the base this branch is now
+rebased onto; it does **not** build or push a `v3.4.1-perrypedia-metadata`
+image to any registry — that's a separate step (see the 2026-09-15
+"Local test image" log entry for the build/push pattern) still to do
+before that tag can actually be deployed.
+
+**Not done this round, flagged as follow-up**: the squashed clean PR
+branch `perrypedia-metadata-source` (`6be5523bd`, cut 2026-09-15 from
+`origin/develop` at `539a0e080`) was **not** recut against the new tip —
+it's now 23 commits stale the same way it was before the 2026-09-15
+recut. Re-run that recut (fresh diff against current `origin/develop`,
+excluding `*.md`, squash, force-push) before opening the real PR, same
+as last time — still blocked on discussion #2643 getting traction per
+the 2026-09-15 decision above, so no urgency yet.
+
+Also created `TASK-perrypedia-provider-docs.md` in the sibling
+`grimmory-docs-upstream` repo — a follow-up checklist for the docs site
+(no `perrypedia` mentions there yet; RanobeDB is the closest existing
+precedent to mirror) once this provider actually ships upstream.
+
+**Recut the clean PR branch** (same day, follow-up): fresh `git worktree`
+from current `origin/develop` (`2d7a3e9c5`), regenerated the non-`.md`
+diff against the rebased `-wip` branch
+(`git diff origin/develop..perrypedia-metadata-source-wip -- . ':!*.md'`,
+66 files — same file count as the 2026-09-15 recut), applied cleanly
+(`git apply --check` passed first try), squashed into one commit
+(`a65a5aaf6`, same commit message as `6be5523bd` before it, DCO
+sign-off), force-pushed over the old branch tip on `origin`.
+
+Verified before pushing (lighter than the full 2026-09-15 pre-PR pass —
+no full test suite this time, just confirm the squash didn't break
+anything): `docker buildx build --target frontend-build .` — passes (Angular
+production build, which type-checks as part of the build). `./gradlew
+compileJava compileTestJava` — passes, no errors (one pre-existing
+unrelated deprecation warning in `KoreaderUserControllerTest`). Run the
+full verification pass (backend tests, frontend tests) before actually
+opening the PR, same as last time.
+
+**Correction to the earlier 2026-09-16 rebase entry above**: the `npx tsc
+--noEmit` check claimed there had actually silently no-opped — `node`/
+`npx` aren't installed on this machine at all (frontend is normally
+built via Docker, as `local-test-image`/this entry both do); the command
+errored with "command not found," but the error text didn't match the
+`grep -i metadata-searcher` filter it was piped through, and a trailing
+unconditional `echo "done"` masked the failure. **Not an established
+verification** — caught only now, via the Docker build above, which
+confirms the resolved `metadata-searcher.component.ts` does compile
+correctly, so the outcome holds, but the earlier "clean" claim itself
+was not actually checked at the time.
+
+**Built and pushed a fresh image from the rebased `-wip` branch**
+(same day, follow-up): working tree at push time also carried the
+in-progress moods/tags autocomplete blur-commit fix (uncommitted
+`metadata-editor.component.ts`/`.html`) — included in the image per the
+same "Docker builds from the working tree, not git history" note as the
+2026-08-29 round.
+
+```
+docker buildx build --platform linux/amd64 -t grimmory:local --load .
+gh auth token | docker login ghcr.io -u hakan42 --password-stdin
+docker tag grimmory:local ghcr.io/hakan42/grimmory:perrypedia-metadata
+docker tag grimmory:local ghcr.io/hakan42/grimmory:v3.4.1-perrypedia-metadata
+docker push ghcr.io/hakan42/grimmory:perrypedia-metadata
+docker push ghcr.io/hakan42/grimmory:v3.4.1-perrypedia-metadata
+docker tag grimmory:local registry.raven-alioth.ts.net/digital-library/grimmory:perrypedia-metadata
+docker tag grimmory:local registry.raven-alioth.ts.net/digital-library/grimmory:v3.4.1-perrypedia-metadata
+docker push registry.raven-alioth.ts.net/digital-library/grimmory:perrypedia-metadata
+docker push registry.raven-alioth.ts.net/digital-library/grimmory:v3.4.1-perrypedia-metadata
+```
+
+All four tags (`perrypedia-metadata` + `v3.4.1-perrypedia-metadata`,
+GHCR + zot) live at digest `sha256:d0c21158...`. `v3.4.1-perrypedia-metadata`
+replaces `v3.3.3-perrypedia-metadata` as the version-matched tag,
+matching the `docker-compose.template` bump in the sibling `grimmory`
+repo (`a8b35b6`, committed separately) — `grimmory-server-1` (prod) picks
+this tag up on its next `run.sh up`/redeploy, not automatically like
+`grimmory-dev` does for the floating tag. Full backend/frontend test
+suites not re-run for this build (already covered by the
+`compileJava`/`compileTestJava` + Docker frontend-build check above,
+which this build itself repeats) — same reduced-verification bar as the
+clean-branch recut earlier today.
+
+**PR opened**: https://github.com/grimmory-tools/grimmory/pull/2654,
+against `perrypedia-metadata-source` at `a65a5aaf6`, targeting
+`develop`. Discussion #2643 still had zero comments/reactions/answer at
+open time — **user decided to open anyway**, overriding the 2026-09-15
+"wait for traction" decision, rather than waiting further. Posted a
+comment on #2643 linking the PR and committing to keep it updated
+through review; same commitment added to the PR body's Additional
+Context section.
+
+Ran the real `just` check recipes before opening, on a fresh worktree of
+the clean branch (not the reduced compile-only check from the build
+round above):
+- `api check` (`./gradlew check --no-daemon --parallel --build-cache`):
+  **3961 tests, 0 failures, 0 errors** (3 skipped) — summed from the
+  JUnit XML reports directly.
+- `ui check`'s typecheck/lint/lint:styles/test steps (`build` not
+  re-run — already covered by the Docker frontend-build check earlier
+  today, same source): all four steps passed under `set -e` (so a
+  failure in typecheck/lint/stylelint would have stopped the script
+  before test ran) — **1722 tests passed, 0 failed** (135 skipped, 307
+  test files passed / 79 skipped of 386). Needed `pnpm -C frontend
+  install --frozen-lockfile --ignore-scripts` as an explicit second
+  install step after the root workspace install — running `pnpm -C
+  frontend run typecheck` directly after only a root install triggered
+  pnpm's own internal dependency-status re-check, which tried (and
+  failed, `ERR_PNPM_IGNORED_BUILDS`) to reinstall without inheriting
+  `--ignore-scripts`, even though `pnpm-workspace.yaml`'s `allowBuilds`
+  should have covered it.
+
+PR body test-count line updated to these real numbers (draft had
+2026-09-15's 3961/306-1720, close but for the previous recut, not this
+one — re-verified rather than assumed still accurate).
+
+## 2026-09-16: `DetailedMetadataProvider` implemented, coderabbitai review addressed
+
+Implemented the deferred item flagged in §4 (see the struck-through
+entry above) and in PR #2654's Additional Context: `PerrypediaParser`
+now `implements DetailedMetadataProvider`, with `fetchDetailedMetadata`
+reusing the existing `extractSourceId`/`fetchBySourceId` pair (`git
+show 63ba17311`). `DETAIL_ID_FIELD` in `metadata-searcher.component.ts`
+gets a `Perrypedia: 'perrypediaId'` entry. 6 new tests in
+`PerrypediaParserTest` (one per series family, a case/separator variant,
+two no-request-made guards) — that file goes from 11 to 17 tests, all
+passing. This was committed directly to `-wip` first (backend +
+frontend + tests together is small enough not to warrant its own
+sub-branch), not opened as a separate PR — see below for how it reached
+the existing PR instead.
+
+**coderabbitai posted 7 automated review findings on PR #2654.**
+Treated as untrusted review data per usual practice — verified each
+against the actual current code before acting, rather than trusting the
+finding text. Fixed 3, skipped 4 as invalid or not actually applicable
+(`git show f9d70e4ec` has the fixes; the commit message there has the
+full per-finding reasoning for what was skipped and why — not
+duplicated here to avoid drift between the two). Two of the skipped
+findings cited line numbers that didn't match what's actually at that
+location in the file (`MetadataProviderSettings.java:14` is just a
+`private Perrypedia perrypedia;` field with no doc-comment at all;
+`MetadataRefreshService.java:357` is an unrelated `addProviderToSet`
+call, not the `isProviderEnabled` switch the finding described) — a
+reminder that an automated review's line references aren't necessarily
+where its own described problem actually lives; always re-locate the
+real code before judging or fixing.
+
+**Recut the clean PR branch a second time** to bring both new commits
+(`63ba17311`, `f9d70e4ec`) into PR #2654's scope — same worktree/diff/
+squash/force-push process as the 2026-09-16 recut above,
+`origin/develop` still unchanged at `2d7a3e9c5`. New squash commit
+`6a747a45a`, same file count (66, no new files this round). Full
+`./gradlew check` re-run on the recut branch before pushing: **3967
+tests, 0 failures, 0 errors** (up from 3961 — the 6 new
+`fetchDetailedMetadata` tests). Frontend Docker build re-run too, clean
+(cached — this round's fixes were backend-only, so nothing to
+re-verify there beyond confirming the cache hit means no frontend files
+changed).
+
+PR #2654's description updated to move `DetailedMetadataProvider` from
+the deferred-items list into Changes, refresh the test-count line to
+3967, and add a line to AI Disclosure noting coderabbitai's suggestions
+were reviewed and addressed (matching what actually happened — reviewed
+and selectively applied, not blindly accepted).
+
+**Docstring Coverage pre-merge check — deliberately not chased.**
+Separate from the 7 inline review findings above: coderabbitai's
+pre-merge checks summary (an issue-level comment, not a line comment)
+flagged "Docstring Coverage: 13.95% (required: 80.00%), 86 functions
+across 50 files" as the one failing check (4 others passed, including
+Title and Description). Checked whether this reflects a real gap
+against this codebase's own convention before deciding whether to act
+on it: sampled per-method javadoc coverage on three comparable,
+already-merged provider classes (`RanobeDbParser`,
+`ComicvineBookParser`, `AudibleParser`) — all effectively **0%**
+between them. So an 80% threshold here isn't this project's actual
+standard, it's coderabbitai's generic default, and writing docstrings
+on ~86 functions just to satisfy it would be pure noise inconsistent
+with every comparable class already in the codebase. **Decided (user,
+2026-09-16): leave as-is, don't chase the metric.** Flagged as a
+"Warning," not a blocking check — SonarCloud passed cleanly. Worth
+re-checking if a maintainer raises it directly in review, but not
+worth pre-emptively satisfying a bot metric the codebase itself doesn't
+follow.
+
+**coderabbitai rescan (triggered by user comment) surfaced 2 more
+findings and confirmed the earlier 13 line comments** — total across
+both rounds was 15 inline findings plus the docstring pre-merge check,
+not the 7-8 relayed in the first batch. The rescan ran against
+`634665e78` (after the first round of fixes) and added two new
+`PerrypediaParser.java` findings not present in the original review:
+
+- **Line ~163: swallowed `InterruptedException`.** Real — verified
+  `MetadataRefreshService` (lines 186-188) really does check for a
+  `RuntimeException` whose cause is `InterruptedException` as its
+  cancellation signal, and 8 of this codebase's other parsers already
+  restore-and-rethrow correctly; only `RanobeDbParser` (which this
+  rate limiter was deliberately modeled on) shares the flaw. **Fixed**
+  (`git show 2292d2535`) — split the catch in both `fetchBySourceId`
+  and `fetchBySearch`, restore the interrupt flag, rethrow as
+  `RuntimeException`.
+- **Line ~187: no per-request HTTP timeout.** Real gap (only the
+  shared client's 10s *connect* timeout exists, no response timeout),
+  but checked how widespread it actually is: 12 of 14 metadata parsers
+  in this codebase share it, including `RanobeDbParser` again. **Not
+  applied** — a per-parser patch wouldn't close the actual risk;
+  flagged in the PR body as a candidate for a centralized fix on the
+  shared `HttpClient` bean instead.
+
+Also re-examined the `PdfMetadataWriter.java:290` "locked perrypediaId
+dropped during XMP rebuild" finding from the first batch (present in
+that batch but not one of the ones the user relayed to me at the time —
+caught it while cross-referencing the full comment list against what
+had actually been fixed). **Not applied**: `MetadataCopyHelper.copyPerrypediaId`
+is structurally identical to `copyComicvineId`/`copyOpenlibraryId` — if
+this is a real bug, it already affects every locked single-ID field in
+existing shipped code, not something specific to or introduced by this
+PR.
+
+Committed the interruption fix (`2292d2535`), pushed `-wip`, recut the
+clean branch a third time (`0f706f024`, still 66 files, `origin/develop`
+still unchanged at `2d7a3e9c5`), compile-checked, force-pushed. Backend
+test count unchanged at 3967 (no new test added for the interruption
+fix — not easily unit-testable without mocking interrupt timing, and
+the existing `PerrypediaParserTest` suite doesn't cover cancellation
+paths for any provider, so adding one just for this would be
+inconsistent with how the rest of the suite tests this class of
+behavior). PR body updated again: interruption fix added to Changes,
+the timeout gap and docstring-coverage decision both written into
+Additional Context so a reviewer sees the reasoning instead of an
+unexplained gap, AI Disclosure's coderabbitai line updated to "4 real
+issues" across both rounds.
+
+**Resolved the 4 GitHub review threads for what was actually fixed**
+(`isProviderEnabled`, URI encoding, `PdfProcessor` truncation, the
+interruption fix) via `gh api graphql`'s `resolveReviewThread`
+mutation — left the other 11 threads open/unresolved, since they
+weren't fixed and a silent resolve would misrepresent that.
+
+## 2026-09-16: PR #2654 rejected — moving to local-only fork maintenance
+
+Closed by maintainer `alexhb1` at 12:07:32Z, same minute the last PR
+body edit went out. Reason given, verbatim: "We're not looking for any
+new metadata providers right now due to how convoluted the process is.
+Once we have something more suitable in place, e.g a plugin
+architecture, we can start promoting some suggestions to issues and
+accepting PRs." This is a blanket policy call, not a response to
+anything code-quality-related in this PR (all coderabbitai/SonarCloud
+checks were passing at close time) — and not something the earlier
+"wait for discussion #2643 to get traction" caution would have
+prevented either way, since it's independent of discussion/issue
+status entirely.
+
+**Decided (user, 2026-09-16): keep this as a local-only fork.** Not
+re-attempting a PR. Going forward, this becomes periodic maintenance
+rather than upstreaming work: rebase `-wip` onto each new upstream
+`grimmory-tools/grimmory` tagged release as it ships (same process as
+the 2026-09-15 and 2026-09-16 rebase entries above — fetch, rebase,
+resolve conflicts, optionally recut the clean single-commit branch if
+still useful as a reference/backup rather than a PR candidate, bump the
+`vX.Y.Z-perrypedia-metadata` tag in the sibling `grimmory` deploy
+repo's `docker-compose.template`, build and push the image). Saved to
+memory as [[perrypedia-upstream-discussion]] (content rewritten to
+reflect the outcome, despite the slug's now-dated name — the file
+covers the whole arc: discussion → PR → rejection → local-fork
+decision, not just the original discussion-opening event).
+
+Branches (`perrypedia-metadata-source-wip`, `perrypedia-metadata-source`)
+left as-is on `origin` (`hakan42/grimmory`) — not deleted, no cleanup
+requested. The closed PR #2654 itself also left as-is (closed, not
+deleted — GitHub doesn't allow deleting a PR anyway).
 
 ## 0. Cover images (investigated 2026-08-29)
 
@@ -757,10 +1345,10 @@ Frontend changes:
 - **Series scope**: confirm PR classic + Neo + Atlan is the full target
   list for v1 — other spin-offs (Silberband, Stardust, PR Extra, ...)
   are unresearched and excluded here.
-- **Whether to add `DetailedMetadataProvider`** for v1 or defer it — the
-  `Quelle:<prefix><id>` lookup that would back it is nearly identical to
-  the primary match path in §2, so it's cheap either way; deferring keeps
-  the first PR smaller.
+- ~~Whether to add `DetailedMetadataProvider` for v1 or defer it~~ —
+  **implemented 2026-09-16**, see the dated log entry below. Was cheap
+  as predicted: `fetchDetailedMetadata` reuses `extractSourceId` +
+  `fetchBySourceId` directly.
 - **Rate limiting**: no documented Perrypedia API rate limit was found;
   default to a conservative self-imposed limiter (mirror `RanobeDbParser`'s
   60 req/min token bucket) rather than assuming unlimited access.
