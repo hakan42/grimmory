@@ -158,7 +158,10 @@ public class PerrypediaParser implements BookParser, DetailedMetadataProvider {
                 return null;
             }
             return toMetadata(parse.getWikitext(), parse.getText(), sourceId, parse.getTitle());
-        } catch (IOException | InterruptedException e) {
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException(e);
+        } catch (IOException e) {
             log.error("Error fetching metadata from Perrypedia API for source id '{}'", sourceId.key(), e);
             return null;
         }
@@ -207,7 +210,10 @@ public class PerrypediaParser implements BookParser, DetailedMetadataProvider {
             // usually null and toMetadata falls back to series-prefix + Nummer.
             SourceId sourceId = extractSourceId(parse.getTitle());
             return toMetadata(parse.getWikitext(), parse.getText(), sourceId, parse.getTitle());
-        } catch (IOException | InterruptedException e) {
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException(e);
+        } catch (IOException e) {
             log.error("Error searching Perrypedia for '{}'", title, e);
             return null;
         }
