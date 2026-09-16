@@ -23,6 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class PerrypediaParserTest {
@@ -239,6 +240,80 @@ class PerrypediaParserTest {
         assertThat(metadata.getSubtitle()).isEqualTo("Überraschung im Intern-Kosmos");
         assertThat(metadata.getSeriesName()).isEqualTo("Im Auftrag der Kosmokraten");
         assertThat(metadata.getPublishedDate()).isEqualTo(LocalDate.of(1987, 1, 27));
+    }
+
+    @Test
+    void fetchDetailedMetadata_ClassicSeriesId_ReturnsMetadata() throws Exception {
+        setUp();
+        mockResponse("Quelle:PR3000", 200,
+                buildParseResponse("Quelle:PR3000", "Mythos Erde (Roman)", readFixture("mythos_erde"), zyklusHtml("Mythos")));
+
+        BookMetadata metadata = parser.fetchDetailedMetadata("PR3000");
+
+        assertThat(metadata).isNotNull();
+        assertThat(metadata.getPerrypediaId()).isEqualTo("PR3000");
+        assertThat(metadata.getTitle()).isEqualTo("Mythos Erde");
+        assertThat(metadata.getSeriesName()).isEqualTo("Mythos");
+    }
+
+    @Test
+    void fetchDetailedMetadata_NeoSeriesId_ReturnsMetadata() throws Exception {
+        setUp();
+        mockResponse("Quelle:PRN389", 200,
+                buildParseResponse("Quelle:PRN389", "Wenn Sterne bluten", readFixture("wenn_sterne_bluten"), zyklusHtml("Artefakte")));
+
+        BookMetadata metadata = parser.fetchDetailedMetadata("PRN389");
+
+        assertThat(metadata).isNotNull();
+        assertThat(metadata.getPerrypediaId()).isEqualTo("PRN389");
+        assertThat(metadata.getSeriesName()).isEqualTo("Artefakte");
+    }
+
+    @Test
+    void fetchDetailedMetadata_AtlanSeriesId_ReturnsMetadata() throws Exception {
+        setUp();
+        mockResponse("Quelle:A800", 200,
+                buildParseResponse("Quelle:A800", "Die Zeitfestung", readFixture("die_zeitfestung"), zyklusHtml("Im Auftrag der Kosmokraten")));
+
+        BookMetadata metadata = parser.fetchDetailedMetadata("A800");
+
+        assertThat(metadata).isNotNull();
+        assertThat(metadata.getPerrypediaId()).isEqualTo("A800");
+        assertThat(metadata.getSeriesName()).isEqualTo("Im Auftrag der Kosmokraten");
+    }
+
+    @Test
+    void fetchDetailedMetadata_LowercaseAndSeparatorVariant_StillResolves() throws Exception {
+        setUp();
+        mockResponse("Quelle:PRN389", 200,
+                buildParseResponse("Quelle:PRN389", "Wenn Sterne bluten", readFixture("wenn_sterne_bluten"), zyklusHtml("Artefakte")));
+
+        // extractSourceId tolerates lowercase prefixes and an optional separator, even though
+        // key() itself only ever produces the canonical "PRN389" form stored in perrypediaId.
+        BookMetadata metadata = parser.fetchDetailedMetadata("prn-389");
+
+        assertThat(metadata).isNotNull();
+        assertThat(metadata.getPerrypediaId()).isEqualTo("PRN389");
+    }
+
+    @Test
+    void fetchDetailedMetadata_NullOrBlankId_ReturnsNullWithoutRequest() {
+        setUp();
+
+        assertThat(parser.fetchDetailedMetadata(null)).isNull();
+        assertThat(parser.fetchDetailedMetadata("")).isNull();
+        assertThat(parser.fetchDetailedMetadata("   ")).isNull();
+
+        verifyNoInteractions(httpClient);
+    }
+
+    @Test
+    void fetchDetailedMetadata_UnrecognizedFormat_ReturnsNullWithoutRequest() {
+        setUp();
+
+        assertThat(parser.fetchDetailedMetadata("not-a-source-id")).isNull();
+
+        verifyNoInteractions(httpClient);
     }
 
     @Test

@@ -22,6 +22,7 @@ const DETAIL_ID_FIELD: Record<string, keyof BookMetadata> = {
   Amazon: 'asin',
   Audible: 'audibleId',
   Comicvine: 'comicvineId',
+  Perrypedia: 'perrypediaId',
 };
 
 function providerKey(result: BookMetadata): string {

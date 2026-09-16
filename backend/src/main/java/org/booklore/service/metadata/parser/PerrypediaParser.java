@@ -50,7 +50,7 @@ import java.util.regex.Pattern;
 @Slf4j
 @Service
 @RequiredArgsConstructor
-public class PerrypediaParser implements BookParser {
+public class PerrypediaParser implements BookParser, DetailedMetadataProvider {
 
     private static final String PERRYPEDIA_BASE_URL = "https://www.perrypedia.de";
     private static final String PERRYPEDIA_API_URL = PERRYPEDIA_BASE_URL + "/api.php";
@@ -114,6 +114,19 @@ public class PerrypediaParser implements BookParser {
         }
 
         return fetchBySearch(searchText);
+    }
+
+    @Override
+    public BookMetadata fetchDetailedMetadata(String providerItemId) {
+        if (providerItemId == null || providerItemId.isBlank()) {
+            return null;
+        }
+        SourceId sourceId = extractSourceId(providerItemId);
+        if (sourceId == null) {
+            log.warn("Perrypedia: '{}' is not a recognized source id.", providerItemId);
+            return null;
+        }
+        return fetchBySourceId(sourceId);
     }
 
     private String resolveSearchText(Book book, FetchMetadataRequest request) {
