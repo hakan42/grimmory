@@ -176,6 +176,7 @@ public class PerrypediaParser implements BookParser, DetailedMetadataProvider {
                     .queryParam("format", "json")
                     .queryParam("formatversion", "2")
                     .queryParam("srsearch", title)
+                    .encode()
                     .build()
                     .toUri();
 
@@ -221,6 +222,7 @@ public class PerrypediaParser implements BookParser, DetailedMetadataProvider {
                 .queryParam("section", "0")
                 .queryParam("format", "json")
                 .queryParam("formatversion", "2")
+                .encode()
                 .build()
                 .toUri();
     }

@@ -407,6 +407,7 @@ public class MetadataRefreshService {
             case Lubimyczytac -> settings.getLubimyczytac() != null && settings.getLubimyczytac().isEnabled();
             case Audible -> settings.getAudible() != null && settings.getAudible().isEnabled();
             case AppleBooks -> settings.getAppleBooks() != null && settings.getAppleBooks().isEnabled();
+            case Perrypedia -> settings.getPerrypedia() != null && settings.getPerrypedia().isEnabled();
             default -> true;
         };
     }
