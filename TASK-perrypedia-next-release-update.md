@@ -13,9 +13,13 @@ release as it ships, rather than by upstreaming.
 This file is the checklist for that maintenance pass. It's a
 recurring/generic procedure, not a one-time task — reuse it (or copy
 it) for each future release, rather than treating it as done after one
-run. As of 2026-09-16, the branch is rebased onto `origin/develop` at
-`2d7a3e9c5` (upstream tag `v3.4.1`), and the deployed image tag is
-`v3.4.1-perrypedia-metadata`.
+run. As of 2026-09-28, the branch (locally; not yet pushed, see
+[[TASK-metadata-perrypedia.md]]'s 2026-09-28 log entry) is rebased onto
+the `v3.5.0` tag (`402e89b44`) — **not** `origin/develop` HEAD, which by
+that point was already 74 commits ahead of any tag; rebase onto the
+latest tag, not raw `develop`, per step 1 below. The deployed image tag
+is still `v3.4.1-perrypedia-metadata` — steps 6-8 (deploy tag bump,
+image build/push, deploy) have not run this round yet.
 
 ## When to run this
 

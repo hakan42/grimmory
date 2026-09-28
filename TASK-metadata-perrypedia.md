@@ -1064,6 +1064,118 @@ left as-is on `origin` (`hakan42/grimmory`) — not deleted, no cleanup
 requested. The closed PR #2654 itself also left as-is (closed, not
 deleted — GitHub doesn't allow deleting a PR anyway).
 
+## 2026-09-28: third rebase onto `develop` (now at `v3.5.0`), provider-controller refactor
+
+First run of [[TASK-perrypedia-next-release-update.md]]'s checklist
+since 2026-09-16 — user synced their `hakan42/grimmory` fork with
+upstream on GitHub, then asked to rebase this feature onto whatever
+landed. `git fetch origin && git fetch upstream` picked up
+`2d7a3e9c5` (`v3.4.1`, this branch's old base) → `5b1aa9f6f` on
+`develop`, 74 commits, and a new `v3.5.0` tag at `402e89b44` — **74
+commits ahead of any tag**, so per the checklist's own rule ("don't
+rebase onto a `develop` HEAD that's ahead of any tagged release"),
+rebased onto the **`v3.5.0` tag**, not raw `develop` HEAD. Confirmed no
+Flyway migration collision first: upstream's highest migration on
+`v3.5.0` is `V148`, this fork's is `V149__Add_perrypedia_id_column.sql`
+— still clear, no renumbering needed this round.
+
+Stashed two unrelated pre-existing uncommitted edits first (a local
+`docker-compose.yml` test-tag change, in-progress `metadata-editor`
+moods/tags work) so the rebase started from a clean tree, popped them
+back after — neither is part of this feature.
+
+**`git rebase v3.5.0` hit 3 real conflicts** (down from 11 in the
+2026-09-15 round and 1 in 2026-09-16's — the provider-registration hot
+spots from earlier rounds, `BookParserConfig.java`/`MetadataProvider.java`/
+`metadata-advanced-fetch-options.component.ts`, didn't move at all this
+time):
+
+1. **`metadata-searcher.component.ts`** — same file as the 2026-09-16
+   conflict, this time because upstream's `v3.5.0` (via #2673/#2670/#2693,
+   "add and use metadata provider controller" / "add external url to all
+   metadata sources" / "drop frontend external URL generation") **deleted
+   the entire per-provider `providerHref` switch statement** — the one
+   this fork's `case 'Perrypedia':` arm lived in — replacing it with a
+   single `return result.externalUrl;`. Resolved by taking upstream's
+   simplified version outright (no provider-specific case needed on the
+   frontend anymore); see below for where the Perrypedia URL moved
+   instead. `DETAIL_ID_FIELD`'s `Perrypedia: 'perrypediaId'` entry (added
+   2026-09-16) was untouched by this refactor and survived the rebase
+   automatically.
+2. **`MetadataRefreshService.java`, `getAllProvidersUsingIndividualFields`**
+   — conflicted twice across two different replayed commits, both because
+   upstream's same refactor **removed an `appSettings` parameter this
+   fork's own `addProviderToSet` calls had been passing since before this
+   fork's very first rebase** (`v3.4.1`), replacing it with a
+   `parser.isEnabled()` lookup via a new `isProviderEnabled(provider)`
+   helper. Resolved both hunks by dropping the `appSettings` argument to
+   match upstream's new 2-arg `addProviderToSet` signature throughout,
+   keeping only the real Perrypedia-specific line
+   (`addProviderToSet(fieldOptions.getPerrypediaId(), uniqueProviders);`,
+   positioned right after `comicvineId` as before).
+3. **Same file, `isProviderEnabled`** — the second conflict was upstream
+   replacing this fork's own per-provider `switch` (added 2026-09-16 to
+   fix a coderabbitai finding, enumerating every provider's settings
+   object by hand, Perrypedia included) with the exact same
+   generalization: `return parser != null && parser.isEnabled();`.
+   Resolved by taking upstream's version — strictly better than the
+   hand-written switch it replaced, and removes the need to add a new
+   `case Perrypedia ->` arm by hand on every future provider-list change.
+
+**Root cause tying all three conflicts together**: `v3.5.0` added a new
+required `BookParser.isEnabled()` interface method (backing a new
+`GET /api/v1/metadata/providers` endpoint — `MetadataProviderController`/
+`MetadataProviderService`, generic over `parserMap`, exactly the map this
+fork's `PerrypediaParser` already registers in) and moved every
+provider's external-profile-link construction from the frontend into
+`BookMetadata.externalUrl`, populated by each parser itself. `PerrypediaParser`
+implemented neither yet, so beyond the merge conflicts above, it would
+not have compiled and would have been **silently invisible in the new
+providers endpoint** (an enum entry with no matching enabled parser is
+filtered out, not an error) even if it had. Fixed after the rebase
+finished cleanly, in a new commit `5b72df45b` (not folded into the
+rebased history):
+
+- `PerrypediaParser.isEnabled()`, mirroring `OpenLibraryParser`'s
+  `getSettings()`/`isEnabled()` pattern exactly (`Optional<MetadataProviderSettings.Perrypedia>`
+  via `appSettingService.getAppSettings()`, `.isEnabled()` with a
+  `false` fallback) — needed a new `AppSettingService appSettingService`
+  constructor field, picked up automatically by `@RequiredArgsConstructor`
+  and Spring's existing DI (no `BookParserConfig` change needed, same as
+  every other provider).
+- `toMetadata()` now sets `.externalUrl(...)` to
+  `https://www.perrypedia.de/wiki/Quelle:<perrypediaId>` (or `null` when
+  `perrypediaId` itself is null) — the exact URL the deleted frontend
+  `case 'Perrypedia':` used to build, just moved server-side to match
+  every other provider's new pattern. Single `BookMetadata.builder()`
+  call site in this file, so this covers both the primary and
+  `fetchDetailedMetadata` paths.
+- Added an `externalUrl` assertion to `PerrypediaParserTest`'s main
+  classic-series test (the existing `perrypediaId` assertion's neighbor)
+  rather than a dedicated `isEnabled()`-specific test — checked first
+  that sibling providers (`ComicvineBookParserTest`,
+  `OpenLibraryParserTest`) don't test `isEnabled()` explicitly either, so
+  a dedicated test would be a new-for-this-provider gap, not filling an
+  existing one.
+
+**Verified**: `./gradlew compileJava compileTestJava` clean, then the
+full `./gradlew check --no-daemon --parallel --build-cache` —
+**3965 tests, 0 failures, 0 errors** (3 skipped, pre-existing), including
+17/17 `PerrypediaParserTest` and 5/5 `InfoboxWikitextParserTest`.
+Frontend: `docker buildx build --target frontend-build .` — production
+Angular build (which type-checks as part of `ng build --configuration
+production`) passes clean, no errors from the `metadata-searcher.component.ts`
+resolution or the new `externalUrl` usage.
+
+**Not yet pushed** — `git push --force-with-lease origin
+perrypedia-metadata-source-wip` was blocked by the auto-mode permission
+classifier (expected: history-rewriting push). Waiting on explicit
+confirmation before force-pushing, and before any of the checklist's
+remaining steps (recutting the clean `perrypedia-metadata-source`
+branch, bumping the deploy tag in the sibling `grimmory` repo,
+building/pushing the image, deploying) — none of those were started this
+round.
+
 ## 0. Cover images (investigated 2026-08-29)
 
 Resolves the "Cover images" open question in §4 below.
