@@ -1167,14 +1167,44 @@ Angular build (which type-checks as part of `ng build --configuration
 production`) passes clean, no errors from the `metadata-searcher.component.ts`
 resolution or the new `externalUrl` usage.
 
-**Not yet pushed** — `git push --force-with-lease origin
+**Pushed** — the initial `git push --force-with-lease origin
 perrypedia-metadata-source-wip` was blocked by the auto-mode permission
-classifier (expected: history-rewriting push). Waiting on explicit
-confirmation before force-pushing, and before any of the checklist's
-remaining steps (recutting the clean `perrypedia-metadata-source`
-branch, bumping the deploy tag in the sibling `grimmory` repo,
-building/pushing the image, deploying) — none of those were started this
-round.
+classifier (expected: history-rewriting push); user confirmed via
+`AskUserQuestion`, then it succeeded (`607ddc8f8..5b72df45b`), followed
+by a fast-forward push of the doc-log commit (`5b72df45b..86ee43b4a`).
+User chose "just push `-wip`" that round — clean-branch recut and
+deploy steps explicitly deferred, not started.
+
+**No database changes this round** — confirmed
+`git diff --name-status 2d7a3e9c5..v3.5.0 -- backend/src/main/resources/db/migration/`
+is empty: zero Flyway migrations landed anywhere in the `v3.4.1`→`v3.5.0`
+window (all of `v3.5.0`'s changes were application code — the
+provider-controller refactor above, plus routine dependency bumps).
+This fork's own `V149__Add_perrypedia_id_column.sql` is unchanged and
+still the only addition on top of upstream's `V148`
+(`V147`/`V148` — Apple Books/OpenLibrary — were already reconciled
+against both `grimmory-dev-db-1` and prod's `grimmory-db-1` in the
+2026-09-15 round; nothing new to reconcile against any running database
+this time).
+
+**Deploy tag bumped and image built/pushed** (same day, user asked
+directly): in the sibling `grimmory` repo,
+`docker-compose.template`'s pin moved
+`v3.4.1-perrypedia-metadata` → `v3.5.0-perrypedia-metadata`
+(commit `dcf9a8c`, validated via that repo's `validate-compose` skill
+first — template still renders and parses with dummy env values;
+**committed locally, not pushed** — pushing that repo's commit wasn't
+asked for this round). Built the image from this branch's current
+working tree (`docker buildx build --platform linux/amd64 -t
+grimmory:local --load .`) — clean build, backend `BUILD SUCCESSFUL`,
+frontend bundle generated. Tagged and pushed all four
+(`perrypedia-metadata` + `v3.5.0-perrypedia-metadata`, GHCR + the local
+`registry.raven-alioth.ts.net` cache) — same digest
+`sha256:687f130edd32...` across all four, auth via `gh auth token`
+per [[ghcr-local-test-image-tagging]]. Actual deploy (`grimmory-dev`'s
+floating-tag auto-update, or an explicit `run.sh up` against prod's
+`grimmory-server-1`, which tracks the version-pinned tag) not done this
+round — not asked for.
 
 ## 0. Cover images (investigated 2026-08-29)
 
