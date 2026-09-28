@@ -13,13 +13,16 @@ release as it ships, rather than by upstreaming.
 This file is the checklist for that maintenance pass. It's a
 recurring/generic procedure, not a one-time task — reuse it (or copy
 it) for each future release, rather than treating it as done after one
-run. As of 2026-09-28, the branch (locally; not yet pushed, see
-[[TASK-metadata-perrypedia.md]]'s 2026-09-28 log entry) is rebased onto
-the `v3.5.0` tag (`402e89b44`) — **not** `origin/develop` HEAD, which by
-that point was already 74 commits ahead of any tag; rebase onto the
-latest tag, not raw `develop`, per step 1 below. The deployed image tag
-is still `v3.4.1-perrypedia-metadata` — steps 6-8 (deploy tag bump,
-image build/push, deploy) have not run this round yet.
+run. As of 2026-09-28, the branch is rebased onto and pushed at the
+`v3.5.0` tag's base (`402e89b44`) — **not** `origin/develop` HEAD, which
+by that point was already ~70 commits ahead of any tag; rebase onto the
+latest tag, not raw `develop`, per step 1 below. `perrypedia-metadata-source`
+(the clean reference branch) is recut from the same `v3.5.0` base, commit
+`dacd355fe`. The deployed image tag is `v3.5.0-perrypedia-metadata`,
+built and pushed to GHCR + the local registry, and the sibling
+`grimmory` repo's deploy-tag bump (`dcf9a8c`) is pushed too. **Deploy
+itself is now Jenkins-owned** — see [[jenkins-handles-deploy]]; step 8
+below is historical, not something to run manually going forward.
 
 ## When to run this
 
@@ -35,33 +38,44 @@ arbitrary `develop` HEAD state.
 
 All commands run from `grimmory-upstream` unless noted.
 
-1. **Update remotes and confirm the new tag:**
+1. **Update remotes and find the target tag:**
    ```sh
    git fetch origin && git fetch upstream
-   git log --oneline -1 origin/develop
+   git describe --tags --abbrev=0 upstream/develop   # latest tag, e.g. vX.Y.Z
+   git rev-list --count <tag>..origin/develop         # how far develop has drifted past it
    ```
-   Confirm this corresponds to the new release tag before proceeding —
-   don't rebase onto a `develop` HEAD that's ahead of any tagged
-   release, since the deploy tag we bump to should track a real
-   release, not an arbitrary commit.
+   **Rebase onto the tag itself, not `origin/develop` HEAD**, whenever
+   that count is nonzero — confirmed necessary again 2026-09-28
+   (`origin/develop` was ~70 commits past `v3.5.0` at rebase time). The
+   deploy tag we bump to should track a real release, not an arbitrary
+   `develop` commit, and rebasing onto a `develop` HEAD ahead of any tag
+   would pull in unreleased, possibly-still-changing upstream work.
 
-2. **Rebase the working branch:**
+2. **Rebase the working branch onto the tag found above:**
    ```sh
    git checkout perrypedia-metadata-source-wip
    git status --short   # stash/commit anything in the way first, per repo convention
-   git rebase origin/develop
+   git rebase <tag>
    ```
    Expect conflicts in the "register a new provider" touchpoints if
-   upstream added its own provider(s) in the interim — see
-   [[TASK-metadata-perrypedia.md]]'s 2026-09-15 and 2026-09-16 rebase
-   log entries for the concrete conflict list and resolution pattern
-   from the last two rounds (`BookParserConfig.java`,
-   `MetadataProvider.java`, `metadata-searcher.component.ts`,
-   `metadata-advanced-fetch-options.component.ts`, etc. have been the
-   recurring hot spots). Also check for a **migration number
-   collision** (`V149__Add_perrypedia_id_column.sql` vs. whatever
-   upstream's own next migration number is) — renumber ours forward if
-   upstream has claimed `V149`+ already, content unchanged.
+   upstream added its own provider(s) or refactored provider plumbing in
+   the interim — see [[TASK-metadata-perrypedia.md]]'s 2026-09-15,
+   2026-09-16, and 2026-09-28 rebase log entries for the concrete
+   conflict list and resolution pattern from each round
+   (`BookParserConfig.java`, `MetadataProvider.java`,
+   `metadata-searcher.component.ts`,
+   `metadata-advanced-fetch-options.component.ts`,
+   `MetadataRefreshService.java`, etc. have been the recurring hot
+   spots — 2026-09-28's round added a required `BookParser.isEnabled()`
+   method and moved provider external-link generation server-side, so
+   check whether `PerrypediaParser` still compiles against the interface
+   after any future round, not just whether the rebase itself is
+   conflict-free). Also check for a **migration number collision**
+   (`V149__Add_perrypedia_id_column.sql` vs. whatever upstream's own next
+   migration number is) — renumber ours forward if upstream has claimed
+   `V149`+ already, content unchanged. Confirm via
+   `git diff --name-status <old-base>..<new-tag> -- backend/src/main/resources/db/migration/`
+   whether any migrations changed at all — 2026-09-28's round had none.
 
 3. **Verify it actually builds before pushing anything:**
    ```sh
@@ -88,17 +102,25 @@ All commands run from `grimmory-upstream` unless noted.
    useful as a squashed reference/backup. If skipped, skip straight to
    step 6 using the `-wip` branch's tree instead of a fresh worktree.
    If doing it, use a throwaway `git worktree` (never the main checkout
-   — see [[wip-then-clean-pr-branch]]):
+   — see [[wip-then-clean-pr-branch]]), cut from **the same tag `-wip`
+   was rebased onto in step 2** (not `origin/develop` HEAD — confirmed
+   2026-09-28 that diffing against a `develop` HEAD ahead of that tag
+   spuriously includes a revert of every commit between them):
    ```sh
-   git worktree add /tmp/perrypedia-clean-recut -B perrypedia-metadata-source origin/develop
-   git diff origin/develop..perrypedia-metadata-source-wip -- . ':!*.md' > /tmp/perrypedia.patch
+   git worktree add /tmp/perrypedia-clean-recut -B perrypedia-metadata-source <tag>
+   git diff <tag>..perrypedia-metadata-source-wip -- . ':!*.md' ':!.gitignore' > /tmp/perrypedia.patch
    cd /tmp/perrypedia-clean-recut && git apply --check /tmp/perrypedia.patch && git apply /tmp/perrypedia.patch
+   cd backend && ./gradlew compileJava compileTestJava --no-daemon && cd ..
    git add -A && git commit -s -m "feat(metadata): add Perrypedia metadata provider"
-   git push --force origin perrypedia-metadata-source
+   git push --force-with-lease origin perrypedia-metadata-source
    ```
-   Clean up the worktree afterward (`git worktree remove`, `chown`-ing
-   back first if any step ran inside Docker as root — see the
-   2026-09-16 log for that gotcha).
+   The `':!.gitignore'` exclusion matters as of 2026-09-16's `TASK.md`
+   gitignore fix — confirm at recut time whether any other non-`.md`
+   repo-hygiene file has landed on `-wip` since and extend the exclusion
+   list to match (see [[TASK-metadata-perrypedia.md]]'s "Branch & commit
+   strategy" note). Clean up the worktree afterward (`git worktree
+   remove`, `chown`-ing back first if any step ran inside Docker as root
+   — see the 2026-09-16 log for that gotcha).
 
 6. **Bump the deploy tag** in the sibling `grimmory` repo:
    - Edit `docker-compose.template`'s `server.image` line to
@@ -126,12 +148,13 @@ All commands run from `grimmory-upstream` unless noted.
    (`registry.raven-alioth.ts.net` push needs no login — anonymous push
    works against that pull-through cache's own namespace.)
 
-8. **Deploy**: `grimmory-dev` (if tracking the floating tag) updates
-   itself automatically once the new image is pushed; the always-on
-   `grimmory-server-1` (prod, tracking the version-pinned tag) needs an
-   explicit `run.sh up` in the `grimmory` deploy repo to actually roll
-   out the new tag — this only updates what config points at, it
-   doesn't restart anything by itself.
+8. **Deploy — Jenkins-owned as of 2026-09-28, see [[jenkins-handles-deploy]].**
+   Don't run this step manually; it's kept here as historical record of
+   how it worked before Jenkins took over. (Previously: `grimmory-dev`,
+   if tracking the floating tag, updated itself automatically once the
+   new image was pushed; the always-on `grimmory-server-1` (prod,
+   tracking the version-pinned tag) needed an explicit `run.sh up` in
+   the `grimmory` deploy repo to actually roll out the new tag.)
 
 9. **Log the round** in [[TASK-metadata-perrypedia.md]] with a dated
    entry (new upstream version, what conflicted and how it was

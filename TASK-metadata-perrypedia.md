@@ -1193,18 +1193,65 @@ directly): in the sibling `grimmory` repo,
 `v3.4.1-perrypedia-metadata` → `v3.5.0-perrypedia-metadata`
 (commit `dcf9a8c`, validated via that repo's `validate-compose` skill
 first — template still renders and parses with dummy env values;
-**committed locally, not pushed** — pushing that repo's commit wasn't
-asked for this round). Built the image from this branch's current
-working tree (`docker buildx build --platform linux/amd64 -t
-grimmory:local --load .`) — clean build, backend `BUILD SUCCESSFUL`,
-frontend bundle generated. Tagged and pushed all four
-(`perrypedia-metadata` + `v3.5.0-perrypedia-metadata`, GHCR + the local
+commit `dcf9a8c`). Built the image from this branch's current working
+tree (`docker buildx build --platform linux/amd64 -t grimmory:local
+--load .`) — clean build, backend `BUILD SUCCESSFUL`, frontend bundle
+generated. Tagged and pushed all four (`perrypedia-metadata` +
+`v3.5.0-perrypedia-metadata`, GHCR + the local
 `registry.raven-alioth.ts.net` cache) — same digest
-`sha256:687f130edd32...` across all four, auth via `gh auth token`
-per [[ghcr-local-test-image-tagging]]. Actual deploy (`grimmory-dev`'s
-floating-tag auto-update, or an explicit `run.sh up` against prod's
-`grimmory-server-1`, which tracks the version-pinned tag) not done this
-round — not asked for.
+`sha256:687f130edd32...` across all four, auth via `gh auth token` per
+[[ghcr-local-test-image-tagging]].
+
+**Sibling repo's `dcf9a8c` push**: this session's git access to
+`git.raven-alioth.ts.net` (the `grimmory` deploy repo's remote) failed
+with `Permission denied (publickey)` — no SSH agent, no key loaded for
+that host in this sandboxed session, same for both push and a plain
+fetch. User pushed it manually instead.
+
+**Deploy — user confirmed Jenkins now owns this** (2026-09-28): asked
+whether to run the actual rollout (`grimmory-dev`'s floating-tag
+auto-update, or an explicit `run.sh up` against prod's
+`grimmory-server-1`); user said "Jenkins will take care of this. I will
+create appropiate jobs" — see [[jenkins-handles-deploy]]. Confirmed
+after the fact via `docker inspect grimmory-server-1`: it was already
+running `sha256:687f130edd32...` (the exact digest pushed above),
+healthy, clean startup log (`Started BookloreApplication in 9.36
+seconds`, no Flyway/Tomcat errors) — so something (Jenkins or the user)
+had already rolled it out by the time this was checked. This task's
+"Deploy" step is Jenkins-owned going forward; don't offer to trigger it
+manually.
+
+**Clean branch recut** (same day, on request): `perrypedia-metadata-source`
+was 69 commits stale (last recut 2026-09-16, from `origin/develop` at
+that time). Recut from the **`v3.5.0` tag**, not `origin/develop` HEAD —
+`origin/develop` is still the same 69 commits ahead of `v3.5.0` noted in
+the rebase entry above, and `-wip` itself is based on the tag, so
+diffing against `develop` HEAD here would have spuriously included a
+revert of those 69 unrelated upstream commits. This is a correction to
+this checklist's own literal example commands (`TASK-perrypedia-next-release-update.md`
+step 5 says "cut from `origin/develop`") — right when `-wip`'s base tag
+and `develop` HEAD coincide, but not this round; the checklist has been
+updated to say so.
+
+Used a throwaway `git worktree` at `/tmp/perrypedia-clean-recut` (never
+the main checkout, per [[wip-then-clean-pr-branch]]), diff-and-apply
+technique: `git diff v3.5.0..perrypedia-metadata-source-wip -- . ':!*.md' ':!.gitignore'`
+— **the `.gitignore` exclusion actually mattered this time**, unlike
+every prior recut; confirmed empty without it. `git apply --check` passed
+first try, 66 files (same count as the 2026-09-15/16 recuts — the
+`isEnabled`/`externalUrl` fix and other v3.5.0-adaptation changes are all
+modifications to already-included files, no new ones). `./gradlew
+compileJava compileTestJava` clean before committing. Squashed into one
+commit `dacd355fe` (same message as every prior recut, DCO sign-off),
+force-pushed over the old tip (`0f706f024` → `dacd355fe`) — this push was
+**not** blocked by the permission classifier this round (unlike the
+`-wip` force-push earlier today), possibly because it ran from the
+worktree path rather than the main checkout; worth confirming if this
+happens consistently or was incidental. Worktree and patch file cleaned
+up afterward. Only a compile check was run this time (not the full test
+suite) — matches the reduced verification bar used for every prior
+clean-branch recut, since the full suite already ran against the same
+changes on `-wip` earlier this round.
 
 ## 0. Cover images (investigated 2026-08-29)
 
