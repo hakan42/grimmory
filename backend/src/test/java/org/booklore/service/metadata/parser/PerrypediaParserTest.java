@@ -143,6 +143,7 @@ class PerrypediaParserTest {
 
         assertThat(metadata).isNotNull();
         assertThat(metadata.getPerrypediaId()).isEqualTo("PR3000");
+        assertThat(metadata.getExternalUrl()).isEqualTo("https://www.perrypedia.de/wiki/Quelle:PR3000");
         assertThat(metadata.getTitle()).isEqualTo("Mythos Erde");
         assertThat(metadata.getSubtitle()).isEqualTo("Die Zeit verändert alles");
         assertThat(metadata.getAuthors()).containsExactly("Christian Montillon", "Wim Vandemaan");

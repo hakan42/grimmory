@@ -7,7 +7,9 @@ import org.booklore.model.dto.BookMetadata;
 import org.booklore.model.dto.request.FetchMetadataRequest;
 import org.booklore.model.dto.response.perrypediaapi.PerrypediaParseResponse;
 import org.booklore.model.dto.response.perrypediaapi.PerrypediaSearchResponse;
+import org.booklore.model.dto.settings.MetadataProviderSettings;
 import org.booklore.model.enums.MetadataProvider;
+import org.booklore.service.appsettings.AppSettingService;
 import org.booklore.service.metadata.parser.perrypedia.InfoboxWikitextParser;
 import org.booklore.util.BookUtils;
 import org.jsoup.Jsoup;
@@ -75,6 +77,7 @@ public class PerrypediaParser implements BookParser, DetailedMetadataProvider {
 
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
+    private final AppSettingService appSettingService;
 
     // Conservative self-imposed rate limit — no documented Perrypedia API limit was found.
     private static final int MAX_REQUESTS_PER_WINDOW = 60;
@@ -88,6 +91,24 @@ public class PerrypediaParser implements BookParser, DetailedMetadataProvider {
         String key() {
             return prefix + number;
         }
+    }
+
+    @Override
+    public boolean isEnabled() {
+        return getSettings().map(MetadataProviderSettings.Perrypedia::isEnabled).orElse(false);
+    }
+
+    private Optional<MetadataProviderSettings.Perrypedia> getSettings() {
+        var appSettings = appSettingService.getAppSettings();
+
+        if (
+                appSettings == null ||
+                appSettings.getMetadataProviderSettings() == null
+        ) {
+            return Optional.empty();
+        }
+
+        return Optional.ofNullable(appSettings.getMetadataProviderSettings().getPerrypedia());
     }
 
     @Override
@@ -280,6 +301,7 @@ public class PerrypediaParser implements BookParser, DetailedMetadataProvider {
         return BookMetadata.builder()
                 .provider(MetadataProvider.Perrypedia)
                 .perrypediaId(perrypediaId)
+                .externalUrl(perrypediaId != null ? PERRYPEDIA_BASE_URL + "/wiki/Quelle:" + perrypediaId : null)
                 .title(title)
                 .subtitle(fields.get("Untertitel"))
                 .authors(parseAuthors(fields.get("Autor")))
