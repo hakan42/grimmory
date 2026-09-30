@@ -353,6 +353,7 @@ public class MetadataRefreshService {
             addProviderToSet(fieldOptions.getAsin(), uniqueProviders);
             addProviderToSet(fieldOptions.getGoodreadsId(), uniqueProviders);
             addProviderToSet(fieldOptions.getComicvineId(), uniqueProviders);
+            addProviderToSet(fieldOptions.getPerrypediaId(), uniqueProviders);
             addProviderToSet(fieldOptions.getHardcoverId(), uniqueProviders);
             addProviderToSet(fieldOptions.getGoogleId(), uniqueProviders);
             addProviderToSet(fieldOptions.getLubimyczytacId(), uniqueProviders);
@@ -631,6 +632,14 @@ public class MetadataRefreshService {
             metadata.setComicMetadata(metadataMap.get(Comicvine).getComicMetadata());
         }
 
+        if (enabledFields.isPerrypediaId()) {
+            if (metadataMap.containsKey(Perrypedia)) {
+                metadata.setPerrypediaId(metadataMap.get(Perrypedia).getPerrypediaId());
+            }
+        } else if (isReplaceAll && existingMetadata != null) {
+            metadata.setPerrypediaId(existingMetadata.getPerrypediaId());
+        }
+
         if (enabledFields.isLubimyczytacId()) {
             if (metadataMap.containsKey(Lubimyczytac)) {
                 metadata.setLubimyczytacId(metadataMap.get(Lubimyczytac).getLubimyczytacId());
@@ -767,6 +776,7 @@ public class MetadataRefreshService {
             metadata.setAsinLocked(existingMetadata.getAsinLocked());
             metadata.setGoodreadsIdLocked(existingMetadata.getGoodreadsIdLocked());
             metadata.setComicvineIdLocked(existingMetadata.getComicvineIdLocked());
+            metadata.setPerrypediaIdLocked(existingMetadata.getPerrypediaIdLocked());
             metadata.setHardcoverIdLocked(existingMetadata.getHardcoverIdLocked());
             metadata.setHardcoverBookIdLocked(existingMetadata.getHardcoverBookIdLocked());
             metadata.setDoubanIdLocked(existingMetadata.getDoubanIdLocked());

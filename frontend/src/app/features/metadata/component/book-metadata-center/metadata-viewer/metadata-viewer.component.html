@@ -184,7 +184,7 @@
               </p-button>
             </div>
 
-            @if (book?.metadata?.amazonRating || book?.metadata?.asin || book?.metadata?.goodreadsRating || book?.metadata?.goodreadsId || book?.metadata?.hardcoverRating || book?.metadata?.hardcoverId || book?.metadata?.lubimyczytacRating || book?.metadata?.lubimyczytacId || book?.metadata?.ranobedbRating || book?.metadata?.ranobedbId || book?.metadata?.audibleRating || book?.metadata?.audibleId || book?.metadata?.googleId) {
+            @if (book?.metadata?.amazonRating || book?.metadata?.asin || book?.metadata?.goodreadsRating || book?.metadata?.goodreadsId || book?.metadata?.hardcoverRating || book?.metadata?.hardcoverId || book?.metadata?.lubimyczytacRating || book?.metadata?.lubimyczytacId || book?.metadata?.ranobedbRating || book?.metadata?.ranobedbId || book?.metadata?.audibleRating || book?.metadata?.audibleId || book?.metadata?.googleId || book?.metadata?.perrypediaId) {
               <div class="gradient-divider"></div>
             }
 
@@ -293,6 +293,17 @@
                   rel="noopener noreferrer"
                 >
                   <img src="https://books.google.com/favicon.ico" alt="Google Books" class="rating-favicon"/>
+                </a>
+              }
+
+              @if (book?.metadata?.perrypediaId) {
+                <a
+                  class="rating-link"
+                  [href]="'https://www.perrypedia.de/wiki/Quelle:' + book.metadata!.perrypediaId"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <img src="https://www.perrypedia.de/mediawiki/images/Perrypedia_favicon.ico" alt="Perrypedia" class="rating-favicon rating-favicon--framed"/>
                 </a>
               }
 

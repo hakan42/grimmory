@@ -342,6 +342,11 @@
   transition: transform 0.2s ease, filter 0.2s ease;
 }
 
+.rating-favicon--framed {
+  border-radius: 3px;
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--color-border) 70%, var(--color-text) 30%);
+}
+
 .rating-value {
   font-weight: 600;
   font-size: var(--app-text-sm);
