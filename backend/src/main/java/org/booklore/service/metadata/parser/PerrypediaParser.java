@@ -5,6 +5,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.booklore.model.dto.Book;
 import org.booklore.model.dto.BookMetadata;
 import org.booklore.model.dto.request.FetchMetadataRequest;
+import org.booklore.model.dto.response.perrypediaapi.PerrypediaCategoryMembersResponse;
 import org.booklore.model.dto.response.perrypediaapi.PerrypediaParseResponse;
 import org.booklore.model.dto.response.perrypediaapi.PerrypediaSearchResponse;
 import org.booklore.model.dto.settings.MetadataProviderSettings;
@@ -18,6 +19,7 @@ import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 import org.springframework.stereotype.Service;
 import org.springframework.web.util.UriComponentsBuilder;
+import org.springframework.web.util.UriUtils;
 import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
@@ -25,6 +27,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.DateTimeException;
 import java.time.LocalDate;
 import java.util.Arrays;
@@ -45,7 +48,7 @@ import java.util.regex.Pattern;
  * {@code action=parse} to get both the raw wikitext (for fields the infobox
  * template exposes as literal parameters — title, subtitle, author, issue
  * number, publication date) and the rendered infobox HTML in a single
- * request. The story cycle ("Zyklus") and the cover thumbnail are only
+ * request. The story cycle ("Zyklus") and the cover image are only
  * available as expanded template output, not literal parameters, so both
  * are read from the rendered HTML infobox instead of the wikitext.
  */
@@ -56,6 +59,10 @@ public class PerrypediaParser implements BookParser, DetailedMetadataProvider {
 
     private static final String PERRYPEDIA_BASE_URL = "https://www.perrypedia.de";
     private static final String PERRYPEDIA_API_URL = PERRYPEDIA_BASE_URL + "/api.php";
+    // MediaWiki's standard redirect to a file's full-resolution original, given only its name.
+    private static final String FILE_PATH_URL = PERRYPEDIA_BASE_URL + "/wiki/Special:FilePath/";
+    private static final String FILE_PAGE_HREF_PREFIX = "/wiki/Datei:";
+    private static final String FILE_TITLE_PREFIX = "Datei:";
     private static final String USER_AGENT = "Grimmory/1.0 (Book and Comic Metadata Fetcher; +https://github.com/grimmory-tools/grimmory)";
 
     // Icons that can appear as <img> tags in the same infobox/section-0 HTML as the cover:
@@ -64,6 +71,22 @@ public class PerrypediaParser implements BookParser, DetailedMetadataProvider {
     private static final Set<String> NON_COVER_IMAGE_FILENAMES = Set.of(
             "Logo_Begriffsklärung.png", "Leseprobe.png", "Hörprobe.png"
     );
+
+    /**
+     * Per-series cover gallery category and cover file naming ({@code PR0122.jpg},
+     * {@code Neo001.jpg}, {@code A259 1.JPG}), keyed by {@code perrypediaId} prefix. Only the
+     * name stem is fixed; suffix and extension case vary, so the actual file name is read from
+     * the category listing rather than constructed.
+     */
+    private record CoverCategory(String title, String filenamePrefix, int issueDigits) {
+    }
+
+    private static final Map<String, CoverCategory> COVER_CATEGORIES = Map.of(
+            "PR", new CoverCategory("Kategorie:Cover_-_Rhodan_Heft", "PR", 4),
+            "PRN", new CoverCategory("Kategorie:Cover_-_Neo_Heft", "Neo", 3),
+            "A", new CoverCategory("Kategorie:Cover_-_Atlan_Heft", "A", 3)
+    );
+    private static final int COVER_CATEGORY_LOOKUP_LIMIT = 5;
 
     // PRN must be tried before PR so "PRN389" isn't mistakenly matched as prefix "PR", number "N389".
     private static final Pattern SOURCE_ID_PATTERN = Pattern.compile("(?i)\\b(PRN|PR|A)\\s*-?\\s*(\\d{1,4})\\b");
@@ -297,6 +320,10 @@ public class PerrypediaParser implements BookParser, DetailedMetadataProvider {
         }
 
         Document doc = (html == null || html.isBlank()) ? null : Jsoup.parse(html);
+        String coverUrl = extractCoverUrl(doc);
+        if (coverUrl == null) {
+            coverUrl = fetchCoverFromCategory(seriesPrefix, number);
+        }
 
         return BookMetadata.builder()
                 .provider(MetadataProvider.Perrypedia)
@@ -309,7 +336,7 @@ public class PerrypediaParser implements BookParser, DetailedMetadataProvider {
                 .seriesNumber(parseFloat(number))
                 .publishedDate(parseGermanDate(fields.get("Erscheinungsdatum")))
                 .language("de")
-                .thumbnailUrl(extractCoverUrl(doc))
+                .thumbnailUrl(coverUrl)
                 .build();
     }
 
@@ -365,13 +392,17 @@ public class PerrypediaParser implements BookParser, DetailedMetadataProvider {
     }
 
     /**
-     * Reads the cover thumbnail out of the rendered infobox HTML — the same document already
+     * Reads the cover image out of the rendered infobox HTML — the same document already
      * parsed for {@link #extractZyklus}, so this needs no extra request. Filenames aren't a
      * predictable {@code <prefix><nnnn>.jpg} pattern across series (Atlan's is e.g.
      * {@code A800_1.JPG}), so this reads the actual {@code <img>} tag rather than constructing
      * one, skipping the handful of non-cover icons ({@link #NON_COVER_IMAGE_FILENAMES}) that can
-     * appear in the same block. Prefers the widest {@code srcset} candidate over the bare
-     * {@code src} thumbnail.
+     * appear in the same block.
+     * <p>
+     * The infobox only embeds downscaled thumbnails, so the cover's file name is taken from the
+     * {@code Datei:} page link wrapping the {@code <img>} (exact case, already URL-encoded) and
+     * turned into a {@code Special:FilePath} URL, which redirects to the full-resolution
+     * original. Without such a link, falls back to the widest {@code srcset} thumbnail.
      */
     private String extractCoverUrl(Document doc) {
         if (doc == null) {
@@ -382,12 +413,87 @@ public class PerrypediaParser implements BookParser, DetailedMetadataProvider {
             if (NON_COVER_IMAGE_FILENAMES.stream().anyMatch(filename::equalsIgnoreCase)) {
                 continue;
             }
+            Element link = img.parent();
+            if (link != null && link.is("a") && link.attr("href").startsWith(FILE_PAGE_HREF_PREFIX)) {
+                return FILE_PATH_URL + link.attr("href").substring(FILE_PAGE_HREF_PREFIX.length());
+            }
             String url = widestImageUrl(img);
             if (url != null && !url.isBlank()) {
                 return resolveImageUrl(url);
             }
         }
         return null;
+    }
+
+    /**
+     * Fallback for articles whose infobox has no cover image: looks the issue up in its series'
+     * cover gallery category instead. One extra request, only made when the infobox came up empty.
+     */
+    private String fetchCoverFromCategory(String seriesPrefix, String number) {
+        CoverCategory category = seriesPrefix != null ? COVER_CATEGORIES.get(seriesPrefix) : null;
+        if (category == null || number == null) {
+            return null;
+        }
+        int issue;
+        try {
+            issue = Integer.parseInt(number.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+        String stem = category.filenamePrefix() + String.format("%0" + category.issueDigits() + "d", issue);
+        // e.g. "PR0122.jpg", "Neo390.jpg", "A259 1.JPG" — optional edition suffix, any extension case.
+        Pattern coverName = Pattern.compile("(?i)" + Pattern.quote(stem) + "(?:[ _]\\d+)?\\.\\p{Alpha}+");
+
+        URI uri = UriComponentsBuilder.fromUriString(PERRYPEDIA_API_URL)
+                .queryParam("action", "query")
+                .queryParam("list", "categorymembers")
+                .queryParam("cmtitle", category.title())
+                .queryParam("cmtype", "file")
+                // Category sort keys are the upper-cased file names.
+                .queryParam("cmstartsortkeyprefix", stem.toUpperCase(Locale.ROOT))
+                .queryParam("cmlimit", String.valueOf(COVER_CATEGORY_LOOKUP_LIMIT))
+                .queryParam("format", "json")
+                .queryParam("formatversion", "2")
+                .encode()
+                .build()
+                .toUri();
+
+        try {
+            waitForRateLimit();
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(uri)
+                    .header("User-Agent", USER_AGENT)
+                    .GET()
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() != 200) {
+                log.error("Perrypedia category API returned status code {}", response.statusCode());
+                return null;
+            }
+
+            PerrypediaCategoryMembersResponse members = objectMapper.readValue(response.body(), PerrypediaCategoryMembersResponse.class);
+            if (members.getQuery() == null || members.getQuery().getCategorymembers() == null) {
+                return null;
+            }
+            for (PerrypediaCategoryMembersResponse.CategoryMember member : members.getQuery().getCategorymembers()) {
+                String title = member.getTitle();
+                if (title == null || !title.startsWith(FILE_TITLE_PREFIX)) {
+                    continue;
+                }
+                String filename = title.substring(FILE_TITLE_PREFIX.length());
+                if (coverName.matcher(filename).matches()) {
+                    return FILE_PATH_URL + UriUtils.encodePathSegment(filename.replace(' ', '_'), StandardCharsets.UTF_8);
+                }
+            }
+            return null;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new RuntimeException(e);
+        } catch (IOException e) {
+            log.error("Error looking up Perrypedia cover for '{}' in {}", stem, category.title(), e);
+            return null;
+        }
     }
 
     /** Picks the highest-resolution URL between an {@code <img>}'s {@code src} and {@code srcset} candidates. */

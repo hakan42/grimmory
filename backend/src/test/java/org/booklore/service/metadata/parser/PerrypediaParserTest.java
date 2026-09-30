@@ -68,6 +68,38 @@ class PerrypediaParserTest {
     private static final String DISAMBIGUATION_ICON_IMG =
             "<img alt=\"Logo_Begriffsklärung.png\" src=\"/mediawiki/images/thumb/2/2f/Logo_Begriffskl%C3%A4rung.png/25px-Logo_Begriffskl%C3%A4rung.png\" />";
 
+    /** Real infobox cover markup for "PR3393.jpg" including its Datei: link, captured live 2026-09-30. */
+    private static final String PR3393_LINKED_COVER =
+            "<a href=\"/wiki/Datei:PR3393.jpg\" class=\"image\"><img alt=\"PR3393.jpg\" "
+                    + "src=\"/mediawiki/images/thumb/c/c6/PR3393.jpg/180px-PR3393.jpg\" decoding=\"async\" width=\"180\" height=\"262\" "
+                    + "srcset=\"/mediawiki/images/thumb/c/c6/PR3393.jpg/270px-PR3393.jpg 1.5x, "
+                    + "/mediawiki/images/thumb/c/c6/PR3393.jpg/360px-PR3393.jpg 2x\" /></a>";
+
+    /**
+     * Real Atlan infobox cover markup, captured live 2026-09-30: the alt text has a space where the
+     * file name has an underscore, and the extension is upper case.
+     */
+    private static final String A124_LINKED_COVER =
+            "<a href=\"/wiki/Datei:A124_1.JPG\" class=\"image\"><img alt=\"A124 1.JPG\" "
+                    + "src=\"/mediawiki/images/thumb/5/54/A124_1.JPG/180px-A124_1.JPG\" decoding=\"async\" width=\"180\" height=\"257\" "
+                    + "srcset=\"/mediawiki/images/thumb/5/54/A124_1.JPG/270px-A124_1.JPG 1.5x, "
+                    + "/mediawiki/images/thumb/5/54/A124_1.JPG/360px-A124_1.JPG 2x\" /></a>";
+
+    /** Real reading-sample icon markup, linking off-site rather than to a Datei: page. */
+    private static final String LESEPROBE_LINKED_ICON =
+            "<a href=\"https://perry-rhodan.net/sites/perry-rhodan.net/files/leseproben/PR%20I3393%20Leseprobe.pdf\" rel=\"nofollow\">"
+                    + "<img alt=\"Leseprobe.png\" src=\"/mediawiki/images/thumb/0/09/Leseprobe.png/16px-Leseprobe.png\" /></a>";
+
+    /** Builds a formatversion=2 list=categorymembers response listing the given file page titles. */
+    private String buildCategoryMembersResponse(String... titles) {
+        ObjectNode root = objectMapper.createObjectNode();
+        var members = root.putObject("query").putArray("categorymembers");
+        for (String title : titles) {
+            members.addObject().put("ns", 6).put("title", title);
+        }
+        return root.toString();
+    }
+
     /** Builds a formatversion=2 action=parse response wrapping the given wikitext and rendered HTML. */
     private String buildParseResponse(String redirectFrom, String resolvedTitle, String wikitext, String html) {
         ObjectNode root = objectMapper.createObjectNode();
@@ -108,6 +140,12 @@ class PerrypediaParserTest {
 
     private void setUp() {
         MockitoAnnotations.openMocks(this);
+        // Articles without an infobox cover fall back to a cover-category lookup; default it to empty.
+        try {
+            mockResponse("list=categorymembers", 200, buildCategoryMembersResponse());
+        } catch (IOException | InterruptedException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     @Test
@@ -201,6 +239,91 @@ class PerrypediaParserTest {
         FetchMetadataRequest request = FetchMetadataRequest.builder().title("PR 3000 - Mythos Erde").build();
 
         BookMetadata metadata = parser.fetchTopMetadata(book, request);
+
+        assertThat(metadata).isNotNull();
+        assertThat(metadata.getThumbnailUrl()).isNull();
+    }
+
+    @Test
+    void extractCoverUrl_LinkedCover_ReturnsFullResolutionFilePathUrl() throws Exception {
+        setUp();
+        mockResponse("Quelle:PR3000", 200,
+                buildParseResponse("Quelle:PR3000", "Mythos Erde (Roman)", readFixture("mythos_erde"),
+                        infoboxHtml("Mythos", PR3393_LINKED_COVER + LESEPROBE_LINKED_ICON)));
+
+        BookMetadata metadata = parser.fetchDetailedMetadata("PR3000");
+
+        assertThat(metadata).isNotNull();
+        assertThat(metadata.getThumbnailUrl()).isEqualTo("https://www.perrypedia.de/wiki/Special:FilePath/PR3393.jpg");
+    }
+
+    @Test
+    void extractCoverUrl_LinkedAtlanCover_KeepsFileNameCaseAndUnderscore() throws Exception {
+        setUp();
+        mockResponse("Quelle:A800", 200,
+                buildParseResponse("Quelle:A800", "Die Zeitfestung", readFixture("die_zeitfestung"),
+                        infoboxHtml("Im Auftrag der Kosmokraten", A124_LINKED_COVER)));
+
+        BookMetadata metadata = parser.fetchDetailedMetadata("A800");
+
+        assertThat(metadata).isNotNull();
+        // Special:FilePath 404s unless everything after the first character matches the upload's case.
+        assertThat(metadata.getThumbnailUrl()).isEqualTo("https://www.perrypedia.de/wiki/Special:FilePath/A124_1.JPG");
+    }
+
+    @Test
+    void fetchCoverFromCategory_NoInfoboxCover_ClassicSeries_PicksMatchingFile() throws Exception {
+        setUp();
+        mockResponse("Quelle:PR3000", 200,
+                buildParseResponse("Quelle:PR3000", "Mythos Erde (Roman)", readFixture("mythos_erde"), zyklusHtml("Mythos")));
+        mockResponse("cmstartsortkeyprefix=PR3000", 200,
+                buildCategoryMembersResponse("Datei:PR3000.jpg", "Datei:PR3001.jpg", "Datei:PR3002.jpg"));
+
+        BookMetadata metadata = parser.fetchDetailedMetadata("PR3000");
+
+        assertThat(metadata).isNotNull();
+        assertThat(metadata.getThumbnailUrl()).isEqualTo("https://www.perrypedia.de/wiki/Special:FilePath/PR3000.jpg");
+    }
+
+    @Test
+    void fetchCoverFromCategory_NoInfoboxCover_NeoSeries_UsesNeoFileNamePrefix() throws Exception {
+        setUp();
+        mockResponse("Quelle:PRN389", 200,
+                buildParseResponse("Quelle:PRN389", "Wenn Sterne bluten", readFixture("wenn_sterne_bluten"), zyklusHtml("Artefakte")));
+        mockResponse("cmstartsortkeyprefix=NEO389", 200,
+                buildCategoryMembersResponse("Datei:Neo389.jpg", "Datei:Neo390.jpg"));
+
+        BookMetadata metadata = parser.fetchDetailedMetadata("PRN389");
+
+        assertThat(metadata).isNotNull();
+        assertThat(metadata.getThumbnailUrl()).isEqualTo("https://www.perrypedia.de/wiki/Special:FilePath/Neo389.jpg");
+    }
+
+    @Test
+    void fetchCoverFromCategory_NoInfoboxCover_AtlanSeries_ConvertsSpaceAndKeepsCase() throws Exception {
+        setUp();
+        mockResponse("Quelle:A800", 200,
+                buildParseResponse("Quelle:A800", "Die Zeitfestung", readFixture("die_zeitfestung"), zyklusHtml("Im Auftrag der Kosmokraten")));
+        // Category titles use spaces, e.g. "A259 1.JPG" for the file A259_1.JPG.
+        mockResponse("cmstartsortkeyprefix=A800", 200,
+                buildCategoryMembersResponse("Datei:A800 1.JPG", "Datei:A801 1.JPG"));
+
+        BookMetadata metadata = parser.fetchDetailedMetadata("A800");
+
+        assertThat(metadata).isNotNull();
+        assertThat(metadata.getThumbnailUrl()).isEqualTo("https://www.perrypedia.de/wiki/Special:FilePath/A800_1.JPG");
+    }
+
+    @Test
+    void fetchCoverFromCategory_NoMatchingFile_ReturnsNullThumbnailUrl() throws Exception {
+        setUp();
+        mockResponse("Quelle:PR3000", 200,
+                buildParseResponse("Quelle:PR3000", "Mythos Erde (Roman)", readFixture("mythos_erde"), zyklusHtml("Mythos")));
+        // Cover for PR3000 not uploaded yet: the listing starts at the next issue instead.
+        mockResponse("cmstartsortkeyprefix=PR3000", 200,
+                buildCategoryMembersResponse("Datei:PR3001.jpg", "Datei:PR3002.jpg"));
+
+        BookMetadata metadata = parser.fetchDetailedMetadata("PR3000");
 
         assertThat(metadata).isNotNull();
         assertThat(metadata.getThumbnailUrl()).isNull();
