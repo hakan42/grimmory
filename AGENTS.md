@@ -91,6 +91,19 @@ implementation each and are injected by concrete type rather than through a
 map; if a second implementation of either is added, introduce a map/registry
 for it following the `parserMap` pattern above.
 
+## Fork image builds
+
+`build.sh` builds this fork's Docker image and pushes it to the private
+local registry only, never to a public one such as GHCR. The fork
+carries database migrations that upstream never accepted (e.g.
+`V149__Add_perrypedia_id_column.sql`). Upstream will eventually ship
+its own migrations with the same version numbers. A public image would
+invite other people to run the fork, and their database's Flyway
+history would then conflict with any later upstream image, which could
+break their installation. Keep the image private for as long as the
+fork carries migrations of its own. The script pushes only when run as
+the `jenkins` user; pass `--force` to push from an interactive session.
+
 ## Task files
 
 `TASK.md` and `TASK-*.md` files at the repository root are local, ad hoc
