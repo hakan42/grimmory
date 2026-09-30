@@ -136,19 +136,16 @@ All commands run from `grimmory-upstream` unless noted.
      skill convention.
 
 7. **Build and push the image**, from `grimmory-upstream` at the
-   rebased `-wip` tree (or the recut clean branch if step 5 was done):
+   rebased `-wip` tree:
    ```sh
-   docker buildx build --platform linux/amd64 -t grimmory:local --load .
-   gh auth token | docker login ghcr.io -u hakan42 --password-stdin
-   for tag in perrypedia-metadata vX.Y.Z-perrypedia-metadata; do
-     docker tag grimmory:local ghcr.io/hakan42/grimmory:$tag
-     docker tag grimmory:local registry.raven-alioth.ts.net/digital-library/grimmory:$tag
-     docker push ghcr.io/hakan42/grimmory:$tag
-     docker push registry.raven-alioth.ts.net/digital-library/grimmory:$tag
-   done
+   ./build.sh --force   # --force only needed when not running as jenkins
    ```
-   (`registry.raven-alioth.ts.net` push needs no login — anonymous push
-   works against that pull-through cache's own namespace.)
+   This pushes `perrypedia-metadata` and `vX.Y.Z-perrypedia-metadata`
+   (version auto-detected from the latest upstream tag, or passed as an
+   argument) to `registry.raven-alioth.ts.net` only. Since 2026-09-28
+   there is **no GHCR push**, on purpose: the fork's own Flyway migrations
+   must not reach anyone else's installation (see `AGENTS.md`, "Fork
+   image builds"). The Jenkins `grimmory-build` job runs the same script.
 
 8. **Deploy — Jenkins-owned as of 2026-09-28, see [[jenkins-handles-deploy]].**
    Don't run this step manually; it's kept here as historical record of
