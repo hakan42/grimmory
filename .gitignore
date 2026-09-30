@@ -61,3 +61,5 @@ backend/src/main/resources/application-local.yaml
 ### Local task planning files (see AGENTS.md "Task files") ###
 /TASK.md
 /TASK-*.md
+/finished/TASK.md
+/finished/TASK-*.md
