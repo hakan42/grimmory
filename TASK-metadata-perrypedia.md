@@ -1253,6 +1253,40 @@ suite) — matches the reduced verification bar used for every prior
 clean-branch recut, since the full suite already ran against the same
 changes on `-wip` earlier this round.
 
+## 2026-09-30: full-resolution covers, image rebuild, clean-branch recut
+
+No upstream rebase this round: `-wip` is still based on `v3.5.0`. The
+new `-wip` work since the 2026-09-28 recut is the Perrypedia link in the
+metadata viewer (`finished/TASK-perrypedia-link.md`) and full-resolution
+covers via `Special:FilePath` with a cover-category fallback (feat
+commit `df64b0bc3`; details in
+`finished/TASK-perrypedia-full-cover-image.md`). It supersedes the
+"widest `srcset` thumbnail" result in §0 below.
+
+**Image**: `-wip` pushed to `origin` at `d994ffcef` and built with
+`./build.sh --force`. The version was auto-detected as `v3.5.0`. It
+pushed `perrypedia-metadata` and `v3.5.0-perrypedia-metadata` to the
+local zot registry only, with no GHCR push (that is how `build.sh`
+works now). Both have digest `sha256:ad0c48846678...`. The pinned tag
+didn't change, so there was no deploy-tag bump in the sibling repo.
+Deploying is Jenkins's job ([[jenkins-handles-deploy]]).
+
+**Recut**: `perrypedia-metadata-source` was recut from `v3.5.0` in a
+throwaway worktree, using the same diff-and-apply technique as
+2026-09-28. **New exclusion this round: `build.sh`**, the Jenkins build
+script that landed on `-wip` since the last recut. It is fork infra,
+not part of the feature, so the pathspec is now
+`':!*.md' ':!.gitignore' ':!build.sh'`. `git apply --check` passed.
+There are now 69 files, up from 66: the new
+`PerrypediaCategoryMembersResponse` DTO and the metadata-viewer
+html/scss changes from the link task. Checked that the staged tree is
+identical to `-wip` minus the exclusions. Ran `compileJava
+compileTestJava` plus `PerrypediaParserTest` (23/23 pass). The only
+compile warnings come from upstream code. Squashed into `d7a0b7e79`
+(same message, DCO sign-off) and force-pushed with
+`--force-with-lease` pinned to the old tip (`dacd355fe` →
+`d7a0b7e79`). Worktree removed.
+
 ## 0. Cover images (investigated 2026-08-29)
 
 Resolves the "Cover images" open question in §4 below.
@@ -1303,7 +1337,9 @@ disambiguation icon, and the no-image-present null case) using the real
 (non-thumbnailed) upload would need a follow-up
 `action=query&titles=File:<name>&prop=imageinfo&iiprop=url` request —
 still deferred as unnecessary; the widest `srcset` thumbnail is almost
-certainly good enough for a library cover.
+certainly good enough for a library cover. **Superseded 2026-09-30**:
+the original upload is now fetched via `Special:FilePath`, with no extra
+request. See the dated log entry of that day.
 
 ## 1. Data source facts (verified live, 2026-08-28)
 

@@ -18,7 +18,8 @@ run. As of 2026-09-28, the branch is rebased onto and pushed at the
 by that point was already ~70 commits ahead of any tag; rebase onto the
 latest tag, not raw `develop`, per step 1 below. `perrypedia-metadata-source`
 (the clean reference branch) is recut from the same `v3.5.0` base, commit
-`dacd355fe`. The deployed image tag is `v3.5.0-perrypedia-metadata`,
+`d7a0b7e79` (last recut 2026-09-30, after the full-resolution cover
+work). The deployed image tag is `v3.5.0-perrypedia-metadata`,
 built and pushed to GHCR + the local registry, and the sibling
 `grimmory` repo's deploy-tag bump (`dcf9a8c`) is pushed too. **Deploy
 itself is now Jenkins-owned** — see [[jenkins-handles-deploy]]; step 8
@@ -108,14 +109,15 @@ All commands run from `grimmory-upstream` unless noted.
    spuriously includes a revert of every commit between them):
    ```sh
    git worktree add /tmp/perrypedia-clean-recut -B perrypedia-metadata-source <tag>
-   git diff <tag>..perrypedia-metadata-source-wip -- . ':!*.md' ':!.gitignore' > /tmp/perrypedia.patch
+   git diff <tag>..perrypedia-metadata-source-wip -- . ':!*.md' ':!.gitignore' ':!build.sh' > /tmp/perrypedia.patch
    cd /tmp/perrypedia-clean-recut && git apply --check /tmp/perrypedia.patch && git apply /tmp/perrypedia.patch
    cd backend && ./gradlew compileJava compileTestJava --no-daemon && cd ..
    git add -A && git commit -s -m "feat(metadata): add Perrypedia metadata provider"
    git push --force-with-lease origin perrypedia-metadata-source
    ```
    The `':!.gitignore'` exclusion matters as of 2026-09-16's `TASK.md`
-   gitignore fix — confirm at recut time whether any other non-`.md`
+   gitignore fix, and `':!build.sh'` (the Jenkins build script) as of
+   2026-09-30 — confirm at recut time whether any other non-`.md`
    repo-hygiene file has landed on `-wip` since and extend the exclusion
    list to match (see [[TASK-metadata-perrypedia.md]]'s "Branch & commit
    strategy" note). Clean up the worktree afterward (`git worktree
