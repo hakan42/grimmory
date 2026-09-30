@@ -10,8 +10,9 @@ infobox HTML returned by the existing `action=parse` call — e.g. for
 cover on Perrypedia is much larger (1029×1500 for that same issue) and
 lives at a different URL that the infobox HTML never links to directly.
 This task is about fetching that full-resolution original instead of
-settling for the largest available thumbnail. Implementation is
-deferred — this file is the researched plan only.
+settling for the largest available thumbnail. **Implemented 2026-09-30**
+— see "Implementation" below; the research sections are kept as the
+reasoning behind it.
 
 ## PR hygiene note
 
@@ -186,8 +187,55 @@ directly.
 an arbitrary issue number for each series, since the per-series filename
 padding/separator convention isn't fully confirmed — see below.
 
-## Open questions to resolve before/during implementation
+## Implementation (2026-09-30)
 
+Option 1 (store the `Special:FilePath` URL, no extra request) plus the
+Kategorie fallback, all in `PerrypediaParser`:
+
+- **Primary path** (`extractCoverUrl`): the filename is taken from the
+  `<a href="/wiki/Datei:<file>" class="image">` link that wraps the
+  infobox cover `<img>` (live-checked for PR3393, PRN390, A124), not
+  from `alt`. The `href` has the exact upload name, underscores, and is
+  already URL-encoded; `alt` is not reliable for this (Atlan's
+  `alt="A124 1.JPG"` has a space). `thumbnailUrl` becomes
+  `https://www.perrypedia.de/wiki/Special:FilePath/<file>`, with zero
+  extra requests. If an `<img>` has no such link, the old widest-`srcset`
+  thumbnail is still used as a fallback. The reading- and audio-sample
+  icons link off-site, and `NON_COVER_IMAGE_FILENAMES` still skips them.
+- **Downstream consumers are fine with a redirect URL.** The server-side
+  cover download (`FileService.downloadImageFromUrl` via the `RestClient`
+  bean) uses Spring Boot's JDK request factory. With no explicit
+  redirect setting that maps to `HttpClient.Redirect.NORMAL` (checked in
+  `spring-boot-http-client` 4.1.1 bytecode), so it follows the 3-hop
+  chain. Browser `<img>` previews follow it too. No Referer is needed.
+  The 403-on-bare-curl behavior from 2026-09-16 did not reproduce today,
+  either with the backend's User-Agent or with `Java-http-client/25`.
+- **Kategorie fallback** (`fetchCoverFromCategory`): used only when
+  `extractCoverUrl` returns null and the series and issue number are
+  known. It makes one rate-limited
+  `api.php?action=query&list=categorymembers&cmtype=file` request
+  (JSON, same client and ObjectMapper as the other calls) instead of
+  scraping the HTML gallery. `cmstartsortkeyprefix` is the upper-cased
+  expected stem, because category sort keys are upper-cased file names
+  (verified from the `cmcontinue` hex). It takes the first member
+  matching `(?i)<stem>(?:[ _]\d+)?\.<ext>`, turns spaces into `_`,
+  and returns its `Special:FilePath` URL. `cmlimit=5`.
+- Tests: 6 new cases in `PerrypediaParserTest` using markup captured
+  live 2026-09-30. They cover the linked PR cover plus the off-site icon,
+  Atlan case and underscore preservation, the category fallback for all
+  three series, and no matching category entry. `setUp()` now stubs an
+  empty `categorymembers` response by default, because every cover-less
+  fixture test now reaches the fallback. All 23 tests pass.
+- Not done, on purpose: the thumbnail→original string transform, which
+  relies on undocumented storage layout. `Special:FilePath` made it
+  unnecessary.
+
+## Open questions (resolved 2026-09-30)
+
+- **Resolved (live `Kategorie:` checks):** `PR%04d.jpg`, `Neo%03d.jpg`
+  (`Neo001.jpg`), `A%03d 1.JPG` (`A001 1.JPG`, with a space; the `+` in
+  `A259+1.JPG` was just a URL-encoded space, and `A259 1.JPG` ≡
+  `A259_1.JPG` in MediaWiki). The original question follows.
 - **Per-series filename convention isn't fully nailed down.** Examples
   seen so far: classic `PR<4-digit zero-padded>.jpg` (`PR0122.jpg`,
   `PR3393.jpg`); Neo `Neo<3-digit, unpadded>.jpg` (`Neo201.jpg`,
@@ -197,6 +245,7 @@ padding/separator convention isn't fully confirmed — see below.
   is ambiguous with an encoded space (`A259 1.JPG`). Needs a live check
   against a real Atlan `Datei:` or category page before hardcoding a
   pattern — don't guess.
+- **Resolved: option 1** — see Implementation. The original question follows.
 - **Whether option 1 or 2 above (store the redirect URL vs. resolve it
   server-side) is right** depends on how `thumbnailUrl` is consumed
   elsewhere in the codebase (caching, proxying, EPUB/CBX cover
