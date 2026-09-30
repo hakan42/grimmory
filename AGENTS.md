@@ -96,7 +96,10 @@ for it following the `parserMap` pattern above.
 `TASK.md` and `TASK-*.md` files at the repository root are local, ad hoc
 working files used to hand pre-planned tasks to a coding agent. They are
 not project documentation and are gitignored, so an ordinary `git add -A`
-never sweeps them in by accident. On a working branch (e.g. a `-wip`
+never sweeps them in by accident. Once a task is done, its file is moved
+into `finished/` (e.g. `finished/TASK-perrypedia-link.md`), which is
+gitignored the same way; everything below applies equally to files
+there. On a working branch (e.g. a `-wip`
 branch, see the Perrypedia work's `wip-then-clean-pr-branch` pattern)
 they may deliberately be force-added and committed anyway, to keep
 planning history alongside the code it describes. Regardless of whether
