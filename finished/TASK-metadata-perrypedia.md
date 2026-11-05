@@ -1287,6 +1287,23 @@ compile warnings come from upstream code. Squashed into `d7a0b7e79`
 `--force-with-lease` pinned to the old tip (`dacd355fe` →
 `d7a0b7e79`). Worktree removed.
 
+## 2026-11-05: Perrypedia moved its API; provider fixed
+
+Production lookups all failed with 404. Perrypedia had moved the API
+from `/api.php` to `/mediawiki/api.php`, and the new location refuses
+anonymous requests for page content (`action=parse`,
+`prop=revisions`), while `list=search`, `list=categorymembers` and
+`prop=imageinfo` still work. `Special:FilePath` also returns 403 now.
+
+Fix (`aa81e0541`, `f0cd5a147`): articles are read with `action=raw`
+(following `#WEITERLEITUNG` by hand, at most 3 hops) plus the rendered
+`/wiki/<title>` page; covers are the thumbnail path mapped to the
+original upload path, or `imageinfo` for the category fallback. The
+image search is limited to `.mw-parser-output`, because the full page
+starts with translator flag buttons that were picked up as the cover
+after the first fix. Verified in production on PR 3403: metadata and
+full-resolution cover both work. `PerrypediaParserTest`: 27/27.
+
 ## 0. Cover images (investigated 2026-08-29)
 
 Resolves the "Cover images" open question in §4 below.
