@@ -20,6 +20,7 @@ import org.jsoup.select.Elements;
 import org.springframework.stereotype.Service;
 import org.springframework.web.util.UriComponentsBuilder;
 import org.springframework.web.util.UriUtils;
+import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import java.io.IOException;
@@ -44,11 +45,13 @@ import java.util.regex.Pattern;
  * Fetches metadata for Perry Rhodan / Perry Rhodan Neo / Atlan Heftromane from
  * Perrypedia (https://www.perrypedia.de), a MediaWiki-based fan encyclopedia.
  * <p>
- * There is no structured query API (no Semantic MediaWiki), so this uses
- * {@code action=parse} to get both the raw wikitext (for fields the infobox
- * template exposes as literal parameters — title, subtitle, author, issue
- * number, publication date) and the rendered infobox HTML in a single
- * request. The story cycle ("Zyklus") and the cover image are only
+ * There is no structured query API (no Semantic MediaWiki), and the wiki's
+ * API refuses anonymous requests for page content, so each article is read
+ * with two plain page requests: the raw wikitext ({@code action=raw}, for
+ * fields the infobox template exposes as literal parameters — title,
+ * subtitle, author, issue number, publication date) and the rendered page
+ * HTML. Redirects such as {@code Quelle:PR3403} are followed by hand in the
+ * wikitext. The story cycle ("Zyklus") and the cover image are only
  * available as expanded template output, not literal parameters, so both
  * are read from the rendered HTML infobox instead of the wikitext.
  */
@@ -58,10 +61,17 @@ import java.util.regex.Pattern;
 public class PerrypediaParser implements BookParser, DetailedMetadataProvider {
 
     private static final String PERRYPEDIA_BASE_URL = "https://www.perrypedia.de";
-    private static final String PERRYPEDIA_API_URL = PERRYPEDIA_BASE_URL + "/api.php";
-    // MediaWiki's standard redirect to a file's full-resolution original, given only its name.
-    private static final String FILE_PATH_URL = PERRYPEDIA_BASE_URL + "/wiki/Special:FilePath/";
-    private static final String FILE_PAGE_HREF_PREFIX = "/wiki/Datei:";
+    // The MediaWiki script path is /mediawiki; the API there refuses anonymous content queries
+    // (action=parse, prop=revisions), so only listing queries go through it.
+    private static final String PERRYPEDIA_API_URL = PERRYPEDIA_BASE_URL + "/mediawiki/api.php";
+    private static final String PERRYPEDIA_INDEX_URL = PERRYPEDIA_BASE_URL + "/mediawiki/index.php";
+    private static final String WIKI_PAGE_URL = PERRYPEDIA_BASE_URL + "/wiki/";
+    private static final Pattern REDIRECT_PATTERN = Pattern.compile("(?is)^\\s*#(?:WEITERLEITUNG|REDIRECT)\\s*:?\\s*\\[\\[([^\\]|#]+)");
+    private static final int MAX_REDIRECT_HOPS = 3;
+    // Special:FilePath is refused (403) for automated clients, so full-resolution originals are
+    // reached through their direct upload URL: /mediawiki/images/<h>/<hh>/<file> is the same
+    // path as the thumbnail's /mediawiki/images/thumb/<h>/<hh>/<file>/<width>px-<file>.
+    private static final Pattern THUMBNAIL_PATH_PATTERN = Pattern.compile("^(.*/images)/thumb/(.+?)/[^/]+$");
     private static final String FILE_TITLE_PREFIX = "Datei:";
     private static final String USER_AGENT = "Grimmory/1.0 (Book and Comic Metadata Fetcher; +https://github.com/grimmory-tools/grimmory)";
 
@@ -197,7 +207,7 @@ public class PerrypediaParser implements BookParser, DetailedMetadataProvider {
     private BookMetadata fetchBySourceId(SourceId sourceId) {
         try {
             waitForRateLimit();
-            PerrypediaParseResponse.Parse parse = fetchParse(buildParseUri("Quelle:" + sourceId.key()));
+            PerrypediaParseResponse.Parse parse = fetchPage("Quelle:" + sourceId.key());
             if (parse == null) {
                 return null;
             }
@@ -245,8 +255,7 @@ public class PerrypediaParser implements BookParser, DetailedMetadataProvider {
             }
             String matchedTitle = searchResponse.getQuery().getSearch().getFirst().getTitle();
 
-            waitForRateLimit();
-            PerrypediaParseResponse.Parse parse = fetchParse(buildParseUri(matchedTitle));
+            PerrypediaParseResponse.Parse parse = fetchPage(matchedTitle);
             if (parse == null) {
                 return null;
             }
@@ -263,21 +272,47 @@ public class PerrypediaParser implements BookParser, DetailedMetadataProvider {
         }
     }
 
-    private URI buildParseUri(String pageTitle) {
-        return UriComponentsBuilder.fromUriString(PERRYPEDIA_API_URL)
-                .queryParam("action", "parse")
-                .queryParam("page", pageTitle)
-                .queryParam("redirects", "1")
-                .queryParam("prop", "wikitext|text")
-                .queryParam("section", "0")
-                .queryParam("format", "json")
-                .queryParam("formatversion", "2")
-                .encode()
-                .build()
-                .toUri();
+    /**
+     * Reads an article's raw wikitext, following a {@code #WEITERLEITUNG} redirect by hand, then
+     * its rendered HTML. The result reuses {@link PerrypediaParseResponse.Parse} as a plain holder.
+     * Returns null when the page doesn't exist; a failed HTML request only costs the
+     * HTML-derived fields (cycle, cover).
+     */
+    private PerrypediaParseResponse.Parse fetchPage(String pageTitle) throws IOException, InterruptedException {
+        String title = pageTitle;
+        String wikitext = null;
+        for (int hop = 0; hop <= MAX_REDIRECT_HOPS; hop++) {
+            waitForRateLimit();
+            wikitext = fetchBody(UriComponentsBuilder.fromUriString(PERRYPEDIA_INDEX_URL)
+                    .queryParam("title", title)
+                    .queryParam("action", "raw")
+                    .encode().build().toUri());
+            if (wikitext == null) {
+                return null;
+            }
+            Matcher redirect = REDIRECT_PATTERN.matcher(wikitext);
+            if (!redirect.find()) {
+                break;
+            }
+            title = redirect.group(1).trim();
+            wikitext = null;
+        }
+        if (wikitext == null) {
+            log.error("Perrypedia: too many redirects starting at '{}'", pageTitle);
+            return null;
+        }
+
+        waitForRateLimit();
+        String html = fetchBody(URI.create(WIKI_PAGE_URL + UriUtils.encodePath(title.replace(' ', '_'), StandardCharsets.UTF_8)));
+
+        PerrypediaParseResponse.Parse parse = new PerrypediaParseResponse.Parse();
+        parse.setTitle(title);
+        parse.setWikitext(wikitext);
+        parse.setText(html);
+        return parse;
     }
 
-    private PerrypediaParseResponse.Parse fetchParse(URI uri) throws IOException, InterruptedException {
+    private String fetchBody(URI uri) throws IOException, InterruptedException {
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(uri)
                 .header("User-Agent", USER_AGENT)
@@ -285,19 +320,11 @@ public class PerrypediaParser implements BookParser, DetailedMetadataProvider {
                 .build();
 
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-        // TEMPORARY: dump the raw response for debugging against the live API; remove once the
-        // Zyklus/action=parse switch is confirmed working end-to-end.
-        log.info("Perrypedia raw response for {}: {}", uri, response.body());
         if (response.statusCode() != 200) {
-            log.error("Perrypedia API returned status code {}", response.statusCode());
+            log.error("Perrypedia request {} returned status code {}", uri, response.statusCode());
             return null;
         }
-
-        PerrypediaParseResponse parsed = objectMapper.readValue(response.body(), PerrypediaParseResponse.class);
-        if (parsed.getParse() == null || parsed.getParse().getWikitext() == null) {
-            return null;
-        }
-        return parsed.getParse();
+        return response.body();
     }
 
     private BookMetadata toMetadata(String wikitext, String html, SourceId fallbackSourceId, String resolvedTitle) {
@@ -399,10 +426,8 @@ public class PerrypediaParser implements BookParser, DetailedMetadataProvider {
      * one, skipping the handful of non-cover icons ({@link #NON_COVER_IMAGE_FILENAMES}) that can
      * appear in the same block.
      * <p>
-     * The infobox only embeds downscaled thumbnails, so the cover's file name is taken from the
-     * {@code Datei:} page link wrapping the {@code <img>} (exact case, already URL-encoded) and
-     * turned into a {@code Special:FilePath} URL, which redirects to the full-resolution
-     * original. Without such a link, falls back to the widest {@code srcset} thumbnail.
+     * The infobox only embeds downscaled thumbnails, so the widest {@code srcset} thumbnail's
+     * URL is mapped back to the full-resolution original's upload path ({@link #originalImageUrl}).
      */
     private String extractCoverUrl(Document doc) {
         if (doc == null) {
@@ -413,13 +438,9 @@ public class PerrypediaParser implements BookParser, DetailedMetadataProvider {
             if (NON_COVER_IMAGE_FILENAMES.stream().anyMatch(filename::equalsIgnoreCase)) {
                 continue;
             }
-            Element link = img.parent();
-            if (link != null && link.is("a") && link.attr("href").startsWith(FILE_PAGE_HREF_PREFIX)) {
-                return FILE_PATH_URL + link.attr("href").substring(FILE_PAGE_HREF_PREFIX.length());
-            }
             String url = widestImageUrl(img);
             if (url != null && !url.isBlank()) {
-                return resolveImageUrl(url);
+                return resolveImageUrl(originalImageUrl(url));
             }
         }
         return null;
@@ -483,7 +504,7 @@ public class PerrypediaParser implements BookParser, DetailedMetadataProvider {
                 }
                 String filename = title.substring(FILE_TITLE_PREFIX.length());
                 if (coverName.matcher(filename).matches()) {
-                    return FILE_PATH_URL + UriUtils.encodePathSegment(filename.replace(' ', '_'), StandardCharsets.UTF_8);
+                    return fetchImageUrl(title);
                 }
             }
             return null;
@@ -494,6 +515,24 @@ public class PerrypediaParser implements BookParser, DetailedMetadataProvider {
             log.error("Error looking up Perrypedia cover for '{}' in {}", stem, category.title(), e);
             return null;
         }
+    }
+
+    /** Looks up a file's direct upload URL (one extra request); {@code fileTitle} includes the {@code Datei:} prefix. */
+    private String fetchImageUrl(String fileTitle) throws IOException, InterruptedException {
+        waitForRateLimit();
+        String body = fetchBody(UriComponentsBuilder.fromUriString(PERRYPEDIA_API_URL)
+                .queryParam("action", "query")
+                .queryParam("titles", fileTitle)
+                .queryParam("prop", "imageinfo")
+                .queryParam("iiprop", "url")
+                .queryParam("format", "json")
+                .queryParam("formatversion", "2")
+                .encode().build().toUri());
+        if (body == null) {
+            return null;
+        }
+        JsonNode url = objectMapper.readTree(body).path("query").path("pages").path(0).path("imageinfo").path(0).path("url");
+        return url.isTextual() ? url.asText() : null;
     }
 
     /** Picks the highest-resolution URL between an {@code <img>}'s {@code src} and {@code srcset} candidates. */
@@ -523,6 +562,12 @@ public class PerrypediaParser implements BookParser, DetailedMetadataProvider {
             }
         }
         return best;
+    }
+
+    /** Maps a thumbnail upload URL to its full-resolution original; any other URL is returned unchanged. */
+    private String originalImageUrl(String url) {
+        Matcher matcher = THUMBNAIL_PATH_PATTERN.matcher(url);
+        return matcher.matches() ? matcher.group(1) + "/" + matcher.group(2) : url;
     }
 
     private String resolveImageUrl(String url) {

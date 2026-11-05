@@ -91,25 +91,18 @@ class PerrypediaParserTest {
                     + "<img alt=\"Leseprobe.png\" src=\"/mediawiki/images/thumb/0/09/Leseprobe.png/16px-Leseprobe.png\" /></a>";
 
     /** Builds a formatversion=2 list=categorymembers response listing the given file page titles. */
+    private String buildImageInfoResponse(String url) {
+        ObjectNode root = objectMapper.createObjectNode();
+        root.putObject("query").putArray("pages").addObject().putArray("imageinfo").addObject().put("url", url);
+        return root.toString();
+    }
+
     private String buildCategoryMembersResponse(String... titles) {
         ObjectNode root = objectMapper.createObjectNode();
         var members = root.putObject("query").putArray("categorymembers");
         for (String title : titles) {
             members.addObject().put("ns", 6).put("title", title);
         }
-        return root.toString();
-    }
-
-    /** Builds a formatversion=2 action=parse response wrapping the given wikitext and rendered HTML. */
-    private String buildParseResponse(String redirectFrom, String resolvedTitle, String wikitext, String html) {
-        ObjectNode root = objectMapper.createObjectNode();
-        ObjectNode parse = root.putObject("parse");
-        parse.put("title", resolvedTitle);
-        if (redirectFrom != null) {
-            parse.putArray("redirects").addObject().put("from", redirectFrom).put("to", resolvedTitle);
-        }
-        parse.put("wikitext", wikitext);
-        parse.put("text", html);
         return root.toString();
     }
 
@@ -128,11 +121,35 @@ class PerrypediaParserTest {
         return mockResponse;
     }
 
+    private String decodedUri(java.net.http.HttpRequest request) {
+        return java.net.URLDecoder.decode(request.uri().toString(), StandardCharsets.UTF_8);
+    }
+
+    /**
+     * Mocks one article the way the parser reads it: an optional {@code Quelle:} redirect stub,
+     * the resolved page's raw wikitext, and its rendered HTML page.
+     */
+    private void mockArticle(String redirectFrom, String resolvedTitle, String wikitext, String html) throws IOException, InterruptedException {
+        if (redirectFrom != null) {
+            mockRaw(redirectFrom, 200, "#WEITERLEITUNG [[" + resolvedTitle + "]]");
+        }
+        mockRaw(resolvedTitle, 200, wikitext);
+        mockWikiPage(resolvedTitle, 200, html);
+    }
+
+    private void mockRaw(String title, int statusCode, String body) throws IOException, InterruptedException {
+        mockResponse("title=" + title + "&action=raw", statusCode, body);
+    }
+
+    private void mockWikiPage(String title, int statusCode, String body) throws IOException, InterruptedException {
+        mockResponse("/wiki/" + title.replace(' ', '_'), statusCode, body);
+    }
+
     private void mockResponse(String uriContains, int statusCode, String payload) throws IOException, InterruptedException {
         HttpResponse<String> response = getResponse(statusCode, payload);
         when(
                 httpClient.<String>send(
-                        argThat(arg -> arg != null && arg.uri().toString().contains(uriContains)),
+                        argThat(arg -> arg != null && decodedUri(arg).contains(uriContains)),
                         any()
                 )
         ).thenReturn(response);
@@ -171,8 +188,7 @@ class PerrypediaParserTest {
     @Test
     void fetchTopMetadata_ClassicSeries_ResolvesViaSourceId() throws Exception {
         setUp();
-        mockResponse("Quelle:PR3000", 200,
-                buildParseResponse("Quelle:PR3000", "Mythos Erde (Roman)", readFixture("mythos_erde"), zyklusHtml("Mythos")));
+        mockArticle("Quelle:PR3000", "Mythos Erde (Roman)", readFixture("mythos_erde"), zyklusHtml("Mythos"));
 
         Book book = Book.builder().build();
         FetchMetadataRequest request = FetchMetadataRequest.builder().title("PR 3000 - Mythos Erde").build();
@@ -195,11 +211,10 @@ class PerrypediaParserTest {
     }
 
     @Test
-    void extractCoverUrl_PicksWidestSrcsetCandidateAndResolvesAbsoluteUrl() throws Exception {
+    void extractCoverUrl_MapsWidestSrcsetThumbnailToOriginalUploadUrl() throws Exception {
         setUp();
-        mockResponse("Quelle:PR3000", 200,
-                buildParseResponse("Quelle:PR3000", "Mythos Erde (Roman)", readFixture("mythos_erde"),
-                        infoboxHtml("Mythos", PR3000_COVER_IMG)));
+        mockArticle("Quelle:PR3000", "Mythos Erde (Roman)", readFixture("mythos_erde"),
+                        infoboxHtml("Mythos", PR3000_COVER_IMG));
 
         Book book = Book.builder().build();
         FetchMetadataRequest request = FetchMetadataRequest.builder().title("PR 3000 - Mythos Erde").build();
@@ -207,17 +222,16 @@ class PerrypediaParserTest {
         BookMetadata metadata = parser.fetchTopMetadata(book, request);
 
         assertThat(metadata).isNotNull();
-        // 720px is the widest (2x) srcset candidate, not the bare 360px src.
+        // The widest (2x) srcset thumbnail is mapped back to the full-resolution upload path.
         assertThat(metadata.getThumbnailUrl())
-                .isEqualTo("https://www.perrypedia.de/mediawiki/images/thumb/1/12/PR3000.jpg/720px-PR3000.jpg");
+                .isEqualTo("https://www.perrypedia.de/mediawiki/images/1/12/PR3000.jpg");
     }
 
     @Test
     void extractCoverUrl_SkipsDisambiguationIconAndFindsCoverAfterIt() throws Exception {
         setUp();
-        mockResponse("Quelle:PR3000", 200,
-                buildParseResponse("Quelle:PR3000", "Mythos Erde (Roman)", readFixture("mythos_erde"),
-                        infoboxHtml("Mythos", DISAMBIGUATION_ICON_IMG + PR3000_COVER_IMG)));
+        mockArticle("Quelle:PR3000", "Mythos Erde (Roman)", readFixture("mythos_erde"),
+                        infoboxHtml("Mythos", DISAMBIGUATION_ICON_IMG + PR3000_COVER_IMG));
 
         Book book = Book.builder().build();
         FetchMetadataRequest request = FetchMetadataRequest.builder().title("PR 3000 - Mythos Erde").build();
@@ -226,14 +240,13 @@ class PerrypediaParserTest {
 
         assertThat(metadata).isNotNull();
         assertThat(metadata.getThumbnailUrl())
-                .isEqualTo("https://www.perrypedia.de/mediawiki/images/thumb/1/12/PR3000.jpg/720px-PR3000.jpg");
+                .isEqualTo("https://www.perrypedia.de/mediawiki/images/1/12/PR3000.jpg");
     }
 
     @Test
     void extractCoverUrl_NoImagePresent_ReturnsNullThumbnailUrl() throws Exception {
         setUp();
-        mockResponse("Quelle:PR3000", 200,
-                buildParseResponse("Quelle:PR3000", "Mythos Erde (Roman)", readFixture("mythos_erde"), zyklusHtml("Mythos")));
+        mockArticle("Quelle:PR3000", "Mythos Erde (Roman)", readFixture("mythos_erde"), zyklusHtml("Mythos"));
 
         Book book = Book.builder().build();
         FetchMetadataRequest request = FetchMetadataRequest.builder().title("PR 3000 - Mythos Erde").build();
@@ -245,80 +258,76 @@ class PerrypediaParserTest {
     }
 
     @Test
-    void extractCoverUrl_LinkedCover_ReturnsFullResolutionFilePathUrl() throws Exception {
+    void extractCoverUrl_LinkedCover_ReturnsOriginalUploadUrl() throws Exception {
         setUp();
-        mockResponse("Quelle:PR3000", 200,
-                buildParseResponse("Quelle:PR3000", "Mythos Erde (Roman)", readFixture("mythos_erde"),
-                        infoboxHtml("Mythos", PR3393_LINKED_COVER + LESEPROBE_LINKED_ICON)));
+        mockArticle("Quelle:PR3000", "Mythos Erde (Roman)", readFixture("mythos_erde"),
+                        infoboxHtml("Mythos", PR3393_LINKED_COVER + LESEPROBE_LINKED_ICON));
 
         BookMetadata metadata = parser.fetchDetailedMetadata("PR3000");
 
         assertThat(metadata).isNotNull();
-        assertThat(metadata.getThumbnailUrl()).isEqualTo("https://www.perrypedia.de/wiki/Special:FilePath/PR3393.jpg");
+        assertThat(metadata.getThumbnailUrl()).isEqualTo("https://www.perrypedia.de/mediawiki/images/c/c6/PR3393.jpg");
     }
 
     @Test
     void extractCoverUrl_LinkedAtlanCover_KeepsFileNameCaseAndUnderscore() throws Exception {
         setUp();
-        mockResponse("Quelle:A800", 200,
-                buildParseResponse("Quelle:A800", "Die Zeitfestung", readFixture("die_zeitfestung"),
-                        infoboxHtml("Im Auftrag der Kosmokraten", A124_LINKED_COVER)));
+        mockArticle("Quelle:A800", "Die Zeitfestung", readFixture("die_zeitfestung"),
+                        infoboxHtml("Im Auftrag der Kosmokraten", A124_LINKED_COVER));
 
         BookMetadata metadata = parser.fetchDetailedMetadata("A800");
 
         assertThat(metadata).isNotNull();
-        // Special:FilePath 404s unless everything after the first character matches the upload's case.
-        assertThat(metadata.getThumbnailUrl()).isEqualTo("https://www.perrypedia.de/wiki/Special:FilePath/A124_1.JPG");
+        assertThat(metadata.getThumbnailUrl()).isEqualTo("https://www.perrypedia.de/mediawiki/images/5/54/A124_1.JPG");
     }
 
     @Test
     void fetchCoverFromCategory_NoInfoboxCover_ClassicSeries_PicksMatchingFile() throws Exception {
         setUp();
-        mockResponse("Quelle:PR3000", 200,
-                buildParseResponse("Quelle:PR3000", "Mythos Erde (Roman)", readFixture("mythos_erde"), zyklusHtml("Mythos")));
+        mockArticle("Quelle:PR3000", "Mythos Erde (Roman)", readFixture("mythos_erde"), zyklusHtml("Mythos"));
         mockResponse("cmstartsortkeyprefix=PR3000", 200,
                 buildCategoryMembersResponse("Datei:PR3000.jpg", "Datei:PR3001.jpg", "Datei:PR3002.jpg"));
+        mockResponse("titles=Datei:PR3000.jpg", 200, buildImageInfoResponse("https://www.perrypedia.de/mediawiki/images/1/12/PR3000.jpg"));
 
         BookMetadata metadata = parser.fetchDetailedMetadata("PR3000");
 
         assertThat(metadata).isNotNull();
-        assertThat(metadata.getThumbnailUrl()).isEqualTo("https://www.perrypedia.de/wiki/Special:FilePath/PR3000.jpg");
+        assertThat(metadata.getThumbnailUrl()).isEqualTo("https://www.perrypedia.de/mediawiki/images/1/12/PR3000.jpg");
     }
 
     @Test
     void fetchCoverFromCategory_NoInfoboxCover_NeoSeries_UsesNeoFileNamePrefix() throws Exception {
         setUp();
-        mockResponse("Quelle:PRN389", 200,
-                buildParseResponse("Quelle:PRN389", "Wenn Sterne bluten", readFixture("wenn_sterne_bluten"), zyklusHtml("Artefakte")));
+        mockArticle("Quelle:PRN389", "Wenn Sterne bluten", readFixture("wenn_sterne_bluten"), zyklusHtml("Artefakte"));
         mockResponse("cmstartsortkeyprefix=NEO389", 200,
                 buildCategoryMembersResponse("Datei:Neo389.jpg", "Datei:Neo390.jpg"));
+        mockResponse("titles=Datei:Neo389.jpg", 200, buildImageInfoResponse("https://www.perrypedia.de/mediawiki/images/a/bc/Neo389.jpg"));
 
         BookMetadata metadata = parser.fetchDetailedMetadata("PRN389");
 
         assertThat(metadata).isNotNull();
-        assertThat(metadata.getThumbnailUrl()).isEqualTo("https://www.perrypedia.de/wiki/Special:FilePath/Neo389.jpg");
+        assertThat(metadata.getThumbnailUrl()).isEqualTo("https://www.perrypedia.de/mediawiki/images/a/bc/Neo389.jpg");
     }
 
     @Test
     void fetchCoverFromCategory_NoInfoboxCover_AtlanSeries_ConvertsSpaceAndKeepsCase() throws Exception {
         setUp();
-        mockResponse("Quelle:A800", 200,
-                buildParseResponse("Quelle:A800", "Die Zeitfestung", readFixture("die_zeitfestung"), zyklusHtml("Im Auftrag der Kosmokraten")));
+        mockArticle("Quelle:A800", "Die Zeitfestung", readFixture("die_zeitfestung"), zyklusHtml("Im Auftrag der Kosmokraten"));
         // Category titles use spaces, e.g. "A259 1.JPG" for the file A259_1.JPG.
         mockResponse("cmstartsortkeyprefix=A800", 200,
                 buildCategoryMembersResponse("Datei:A800 1.JPG", "Datei:A801 1.JPG"));
+        mockResponse("titles=Datei:A800 1.JPG", 200, buildImageInfoResponse("https://www.perrypedia.de/mediawiki/images/d/ef/A800_1.JPG"));
 
         BookMetadata metadata = parser.fetchDetailedMetadata("A800");
 
         assertThat(metadata).isNotNull();
-        assertThat(metadata.getThumbnailUrl()).isEqualTo("https://www.perrypedia.de/wiki/Special:FilePath/A800_1.JPG");
+        assertThat(metadata.getThumbnailUrl()).isEqualTo("https://www.perrypedia.de/mediawiki/images/d/ef/A800_1.JPG");
     }
 
     @Test
     void fetchCoverFromCategory_NoMatchingFile_ReturnsNullThumbnailUrl() throws Exception {
         setUp();
-        mockResponse("Quelle:PR3000", 200,
-                buildParseResponse("Quelle:PR3000", "Mythos Erde (Roman)", readFixture("mythos_erde"), zyklusHtml("Mythos")));
+        mockArticle("Quelle:PR3000", "Mythos Erde (Roman)", readFixture("mythos_erde"), zyklusHtml("Mythos"));
         // Cover for PR3000 not uploaded yet: the listing starts at the next issue instead.
         mockResponse("cmstartsortkeyprefix=PR3000", 200,
                 buildCategoryMembersResponse("Datei:PR3001.jpg", "Datei:PR3002.jpg"));
@@ -332,8 +341,7 @@ class PerrypediaParserTest {
     @Test
     void fetchTopMetadata_NeoSeries_ResolvesViaSourceId() throws Exception {
         setUp();
-        mockResponse("Quelle:PRN389", 200,
-                buildParseResponse("Quelle:PRN389", "Wenn Sterne bluten", readFixture("wenn_sterne_bluten"), zyklusHtml("Artefakte")));
+        mockArticle("Quelle:PRN389", "Wenn Sterne bluten", readFixture("wenn_sterne_bluten"), zyklusHtml("Artefakte"));
 
         Book book = Book.builder().build();
         FetchMetadataRequest request = FetchMetadataRequest.builder().title("PRN389 - Wenn Sterne bluten").build();
@@ -350,8 +358,7 @@ class PerrypediaParserTest {
     @Test
     void fetchTopMetadata_AtlanSeries_ResolvesViaSourceId() throws Exception {
         setUp();
-        mockResponse("Quelle:A800", 200,
-                buildParseResponse("Quelle:A800", "Die Zeitfestung", readFixture("die_zeitfestung"), zyklusHtml("Im Auftrag der Kosmokraten")));
+        mockArticle("Quelle:A800", "Die Zeitfestung", readFixture("die_zeitfestung"), zyklusHtml("Im Auftrag der Kosmokraten"));
 
         Book book = Book.builder().build();
         FetchMetadataRequest request = FetchMetadataRequest.builder().title("A800 - Die Zeitfestung").build();
@@ -369,8 +376,7 @@ class PerrypediaParserTest {
     @Test
     void fetchDetailedMetadata_ClassicSeriesId_ReturnsMetadata() throws Exception {
         setUp();
-        mockResponse("Quelle:PR3000", 200,
-                buildParseResponse("Quelle:PR3000", "Mythos Erde (Roman)", readFixture("mythos_erde"), zyklusHtml("Mythos")));
+        mockArticle("Quelle:PR3000", "Mythos Erde (Roman)", readFixture("mythos_erde"), zyklusHtml("Mythos"));
 
         BookMetadata metadata = parser.fetchDetailedMetadata("PR3000");
 
@@ -383,8 +389,7 @@ class PerrypediaParserTest {
     @Test
     void fetchDetailedMetadata_NeoSeriesId_ReturnsMetadata() throws Exception {
         setUp();
-        mockResponse("Quelle:PRN389", 200,
-                buildParseResponse("Quelle:PRN389", "Wenn Sterne bluten", readFixture("wenn_sterne_bluten"), zyklusHtml("Artefakte")));
+        mockArticle("Quelle:PRN389", "Wenn Sterne bluten", readFixture("wenn_sterne_bluten"), zyklusHtml("Artefakte"));
 
         BookMetadata metadata = parser.fetchDetailedMetadata("PRN389");
 
@@ -396,8 +401,7 @@ class PerrypediaParserTest {
     @Test
     void fetchDetailedMetadata_AtlanSeriesId_ReturnsMetadata() throws Exception {
         setUp();
-        mockResponse("Quelle:A800", 200,
-                buildParseResponse("Quelle:A800", "Die Zeitfestung", readFixture("die_zeitfestung"), zyklusHtml("Im Auftrag der Kosmokraten")));
+        mockArticle("Quelle:A800", "Die Zeitfestung", readFixture("die_zeitfestung"), zyklusHtml("Im Auftrag der Kosmokraten"));
 
         BookMetadata metadata = parser.fetchDetailedMetadata("A800");
 
@@ -409,8 +413,7 @@ class PerrypediaParserTest {
     @Test
     void fetchDetailedMetadata_LowercaseAndSeparatorVariant_StillResolves() throws Exception {
         setUp();
-        mockResponse("Quelle:PRN389", 200,
-                buildParseResponse("Quelle:PRN389", "Wenn Sterne bluten", readFixture("wenn_sterne_bluten"), zyklusHtml("Artefakte")));
+        mockArticle("Quelle:PRN389", "Wenn Sterne bluten", readFixture("wenn_sterne_bluten"), zyklusHtml("Artefakte"));
 
         // extractSourceId tolerates lowercase prefixes and an optional separator, even though
         // key() itself only ever produces the canonical "PRN389" form stored in perrypediaId.
@@ -444,8 +447,7 @@ class PerrypediaParserTest {
     void fetchTopMetadata_NoSourceId_FallsBackToTitleSearch() throws Exception {
         setUp();
         mockResponse("list=search", 200, buildSearchResponse("Wenn Sterne bluten"));
-        mockResponse("page=Wenn", 200,
-                buildParseResponse(null, "Wenn Sterne bluten", readFixture("wenn_sterne_bluten"), zyklusHtml("Artefakte")));
+        mockArticle(null, "Wenn Sterne bluten", readFixture("wenn_sterne_bluten"), zyklusHtml("Artefakte"));
 
         Book book = Book.builder().build();
         FetchMetadataRequest request = FetchMetadataRequest.builder().title("Wenn Sterne bluten").build();
@@ -463,8 +465,7 @@ class PerrypediaParserTest {
     void extractZyklus_MissingRow_ReturnsNullSeriesName() throws Exception {
         setUp();
         String htmlWithoutZyklus = "<div class=\"mw-parser-output\"><table><tr><td>Serie:</td><td>Perry Rhodan</td></tr></table></div>";
-        mockResponse("Quelle:PR3000", 200,
-                buildParseResponse("Quelle:PR3000", "Mythos Erde (Roman)", readFixture("mythos_erde"), htmlWithoutZyklus));
+        mockArticle("Quelle:PR3000", "Mythos Erde (Roman)", readFixture("mythos_erde"), htmlWithoutZyklus);
 
         Book book = Book.builder().build();
         FetchMetadataRequest request = FetchMetadataRequest.builder().title("PR 3000 - Mythos Erde").build();
@@ -493,5 +494,46 @@ class PerrypediaParserTest {
 
         assertThat(parser.fetchTopMetadata(book, request)).isNull();
         assertThat(parser.fetchMetadata(book, request)).isEmpty();
+    }
+
+    @Test
+    void fetchTopMetadata_RedirectLoop_ReturnsNull() throws Exception {
+        setUp();
+        mockRaw("Quelle:PR3000", 200, "#WEITERLEITUNG [[Quelle:PR3000]]");
+        mockResponse("list=search", 200, "{\"query\":{\"search\":[]}}");
+
+        Book book = Book.builder().build();
+        FetchMetadataRequest request = FetchMetadataRequest.builder().title("PR 3000 - Mythos Erde").build();
+
+        assertThat(parser.fetchTopMetadata(book, request)).isNull();
+    }
+
+    @Test
+    void fetchTopMetadata_MissingPage_ReturnsNull() throws Exception {
+        setUp();
+        mockRaw("Quelle:PR3000", 404, "File not found.");
+        mockResponse("list=search", 200, "{\"query\":{\"search\":[]}}");
+
+        Book book = Book.builder().build();
+        FetchMetadataRequest request = FetchMetadataRequest.builder().title("PR 3000 - Mythos Erde").build();
+
+        assertThat(parser.fetchTopMetadata(book, request)).isNull();
+    }
+
+    @Test
+    void fetchTopMetadata_HtmlRequestFails_StillReturnsWikitextFields() throws Exception {
+        setUp();
+        mockRaw("Quelle:PR3000", 200, "#REDIRECT [[Mythos Erde (Roman)]]");
+        mockRaw("Mythos Erde (Roman)", 200, readFixture("mythos_erde"));
+        mockWikiPage("Mythos Erde (Roman)", 500, "boom");
+
+        Book book = Book.builder().build();
+        FetchMetadataRequest request = FetchMetadataRequest.builder().title("PR 3000 - Mythos Erde").build();
+
+        BookMetadata metadata = parser.fetchTopMetadata(book, request);
+
+        assertThat(metadata).isNotNull();
+        assertThat(metadata.getTitle()).isEqualTo("Mythos Erde");
+        assertThat(metadata.getSeriesName()).isNull();
     }
 }
