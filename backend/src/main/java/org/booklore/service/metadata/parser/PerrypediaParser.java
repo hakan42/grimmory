@@ -433,7 +433,9 @@ public class PerrypediaParser implements BookParser, DetailedMetadataProvider {
         if (doc == null) {
             return null;
         }
-        for (Element img : doc.select("img")) {
+        // Only the article body: the full page also carries translator flag buttons in its header
+        // and licence/footer badges, none of which are covers.
+        for (Element img : doc.select(".mw-parser-output img")) {
             String filename = img.attr("alt");
             if (NON_COVER_IMAGE_FILENAMES.stream().anyMatch(filename::equalsIgnoreCase)) {
                 continue;

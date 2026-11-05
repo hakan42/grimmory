@@ -258,6 +258,21 @@ class PerrypediaParserTest {
     }
 
     @Test
+    void extractCoverUrl_IgnoresImagesOutsideArticleBody() throws Exception {
+        setUp();
+        // The full page has translator flag buttons ahead of the article body.
+        String flag = "<div id=\"translate\"><img alt=\"Google translator: Translation from German to English.\" "
+                + "src=\"/mediawiki/images/b/b8/Englisch23x35.gif\" width=\"37\" height=\"25\" /></div>";
+        mockArticle("Quelle:PR3000", "Mythos Erde (Roman)", readFixture("mythos_erde"),
+                flag + infoboxHtml("Mythos", PR3000_COVER_IMG));
+
+        BookMetadata metadata = parser.fetchDetailedMetadata("PR3000");
+
+        assertThat(metadata).isNotNull();
+        assertThat(metadata.getThumbnailUrl()).isEqualTo("https://www.perrypedia.de/mediawiki/images/1/12/PR3000.jpg");
+    }
+
+    @Test
     void extractCoverUrl_LinkedCover_ReturnsOriginalUploadUrl() throws Exception {
         setUp();
         mockArticle("Quelle:PR3000", "Mythos Erde (Roman)", readFixture("mythos_erde"),
