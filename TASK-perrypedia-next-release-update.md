@@ -155,10 +155,11 @@ All commands run from `grimmory-upstream` unless noted.
    tracking the version-pinned tag) needed an explicit `run.sh up` in
    the `grimmory` deploy repo to actually roll out the new tag.)
 
-9. **Log the round** in [[TASK-metadata-perrypedia.md]] with a dated
-   entry (new upstream version, what conflicted and how it was
-   resolved, test results, any new bugs found) — matches every prior
-   round's pattern in that file. Update this file's "As of ..." line
+9. **Log the round** in `finished/TASK-metadata-perrypedia.md` (the
+   provider task, moved there once the provider was done; it stays the
+   running log) with a dated entry (new upstream version, what
+   conflicted and how it was resolved, test results, any new bugs
+   found) — matches every prior round's pattern in that file. Update this file's "As of ..." line
    at the top too, so it doesn't go stale.
 
 ## Not in scope here
